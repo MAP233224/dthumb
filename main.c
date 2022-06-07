@@ -7,6 +7,7 @@ typedef unsigned int u32;
 typedef unsigned short u16;
 typedef unsigned char u8;
 
+#define PATH_LENGTH (256)
 #define STRING_LENGTH (64)
 #define CONDITIONS_MAX (16)
 #define BITS(x, b, n) ((x >> b) & ((1 << n) - 1)) //retrieves n bits from x starting at b
@@ -716,55 +717,123 @@ int GetFileSize_mine(FILE* fp) {
     return size;
 }
 
-int DisassembleFile(const u8 filename[256]) {
+int DisassembleFile_stdout(FILE* fp) {
     /**/
-    u8 filename_d[256] = { 0 };
-    sprintf(filename_d, "%s_disassembly.txt", filename);
-
-    FILE* fr = fopen(filename, "rb");
-    if (fr == NULL) return -1;
-    FILE* fw = fopen(filename_d, "w+");
-    if (fw == NULL) return -1;
-
-    int size = GetFileSize_mine(fr);
-    fprintf(fw, "Disassembly of %u bytes:\n\n", size);
+    int size = GetFileSize_mine(fp);
+    printf("Disassembly of %u bytes:\n\n", size);
 
     for (int i = 0; i < size / 2; i++)
     {
         u8 str[STRING_LENGTH] = { 0 };
         u32 code = 0;
-        fread(&code, 4, 1, fr); //prefetch 32 bits
+        fread(&code, 4, 1, fp); //prefetch 32 bits
         if (Disassemble(code, 0, str, 0, "", ARMv5TE)) //32-bit
         {
             CheckSpecialRegister(str);
-            fprintf(fw, "%08X: %08X %s\n", i * 2, code, str);
+            printf("%08X: %08X %s\n", i * 2, code, str);
             i++;
         }
         else //16-bit
         {
-            fseek(fr, -2, SEEK_CUR); //go back 2 bytes
+            fseek(fp, -2, SEEK_CUR); //go back 2 bytes
             CheckSpecialRegister(str);
-            fprintf(fw, "%08X: %04X %s\n", i * 2, code & 0xffff, str);
+            printf("%08X: %04X %s\n", i * 2, code & 0xffff, str);
         }
     }
 
-    printf("\"%s\" disassembled at \"%s\".\n", filename, filename_d);
-    fprintf(fw, "\n%u unknown instructions.", debug_na_count);
-    fclose(fw);
-    fclose(fr);
-    return 0; //success
+    printf("\n%u unknown instructions.\n", debug_na_count);
+    fclose(fp);
+    return 1; //success
+}
+
+int DisassembleFile_fileout(FILE* in, FILE* out) {
+    /**/
+    int size = GetFileSize_mine(in);
+    fprintf(out, "Disassembly of %u bytes:\n\n", size);
+
+    for (int i = 0; i < size / 2; i++)
+    {
+        u8 str[STRING_LENGTH] = { 0 };
+        u32 code = 0;
+        fread(&code, 4, 1, in); //prefetch 32 bits
+        if (Disassemble(code, 0, str, 0, "", ARMv5TE)) //32-bit
+        {
+            CheckSpecialRegister(str);
+            fprintf(out, "%08X: %08X %s\n", i * 2, code, str);
+            i++;
+        }
+        else //16-bit
+        {
+            fseek(in, -2, SEEK_CUR); //go back 2 bytes
+            CheckSpecialRegister(str);
+            fprintf(out, "%08X: %04X %s\n", i * 2, code & 0xffff, str);
+        }
+    }
+
+    fprintf(out, "\n%u unknown instructions.\n", debug_na_count);
+    fclose(in);
+    fclose(out);
+    return 1; //success
+}
+
+
+int IsValidPath(u8* path) {
+    /* Check if length of path/filename is */
+    //todo: check if you can also open it
+    if (!path || !path[0]) return 0; //needs to be at least one char
+    for (u32 i = 1; i < PATH_LENGTH; i++)
+    {
+        if (path[i] == '\0') return 1; //found the end of string char within PATH_LENGTH
+    }
+    return 0;
 }
 
 int main(int argc, char* argv[]) {
 
-    //todo: allow user to launch this as a cmd utility
-    //dthumb <file_in>
-    //printf, so that it could be redirected with "><file_out>"
-    //or print to file by default if file_in is too large
-
     //DumpAllInstructions();
 
-    int err = DisassembleFile("MyCode.bin");
-    printf("DisassembleFile returned %d.", err);
+    u8* filename_in = argv[1];
+    u8* filename_out = argv[2];
+
+    if (IsValidPath(filename_in)) //file in
+    {
+        FILE* file_in = fopen(filename_in, "rb");
+        if (file_in == NULL)
+        {
+            printf("The file \"%s\" doesn't exist.\n", filename_in);
+            return 0;
+        }
+
+        if (IsValidPath(filename_out)) //file out
+        {
+            FILE* file_out = fopen(filename_out, "w+");
+            if (file_out == NULL) return 0; //couldn't create file
+
+            printf("Starting disassembly of \"%s\".\n", filename_in);
+            if (DisassembleFile_fileout(file_in, file_out))
+            {
+                printf("Successfully disassembled \"%s\" to \"%s\".\n", filename_in, filename_out);
+            }
+            else
+            {
+                printf("Error disassembling \"%s\" to \"%s\".\n", filename_in, filename_out);
+            }
+        }
+        else //stdout
+        {
+            printf("Starting disassembly of \"%s\".\n", filename_in);
+            if (DisassembleFile_stdout(file_in))
+            {
+                printf("Successfully disassembled \"%s\".\n", filename_in);
+            }
+            else
+            {
+                printf("Error disassembling \"%s\".\n", filename_in);
+            }
+        }
+        return 0;
+    }
+
+    printf("Nothing was done\n");
     return 0;
 }
