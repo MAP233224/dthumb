@@ -776,7 +776,6 @@ int DisassembleFile_fileout(FILE* in, FILE* out) {
     return 1; //success
 }
 
-
 int IsValidPath(u8* path) {
     /* Check if length of path/filename is */
     //todo: check if you can also open it
@@ -788,15 +787,83 @@ int IsValidPath(u8* path) {
     return 0;
 }
 
+typedef struct {
+    u32 start; //starting address
+    u32 end; //end address
+}FILERANGE;
+
+
+int IsValidIntString_hex(u8* b, u32 size) {
+    /* Valid characters are 0~9 and A~F */
+    for (u8 i = 0; i < size; i++) {
+        if (b[i] < '0' || b[i] > 'F') return 0;
+        if (b[i] > '9' && b[i] < 'A') return 0;
+    }
+    return 1;
+}
+
+int IsValidHexChar(u8 b) {
+    /* Valid characters are 0~9 and A~F */
+    if (b == '-') return 2; //dash special case
+    if (b < '0' || b > 'F') return 0;
+    if (b > '9' && b < 'A') return 0;
+    return 1;
+}
+
+u8 HexLetterToNumber(u8 n) {
+    /* Virtually apends the capital letters right after 9 in the ASCII table */
+    switch (n) {
+    case 'A': case 'B': case 'C': case 'D': case 'E': case 'F':
+        return n - 7;
+    default:
+        return n;
+    }
+}
+
+int IfValidRangeSet(FILERANGE* range, u8* r) {
+    /* Check to see if the range string yields a valid FILERANGE */
+    //acceptable formats:
+    //"%x-%x" //start to end
+    //"--%x" //unspecified start (default to beginning of file, 0) to end
+    //"%x--" //start to unspecified end (default to end of file)
+
+    //todo: complete
+
+    u8 dashcount = 0;
+    u32 address = 0;
+
+    if (!r || !r[0]) return 0; //needs to be at least one char
+    for (u32 i = 0; i < 18; i++) //"01234567-89abcdef" is 18 chars (null terminator included)
+    {
+        if (!r[i]) break; //EOM
+
+        switch (IsValidHexChar(r[i]))
+        {
+        case 0: return 0;
+        case 1: //regular digit
+        {
+            address = address * 16 + HexLetterToNumber(r[i]);
+            break;
+        }
+        case 2: //dash
+        {
+            address = 0;
+            if (dashcount++ > 2) return 0; //can't have more than 2 dashes
+            break;
+        }
+        }
+    }
+    //if start > end or start == end, invalid
+}
+
+
 int main(int argc, char* argv[]) {
 
     //DumpAllInstructions();
 
-    //todo: argv[3] number of instructions (or byte?) to disassemble
-    //todo: argv[4] start of disassembly address in the input file
+
 
     u8* filename_in = argv[1];
-    u8* filename_out = argv[2];
 
     if (IsValidPath(filename_in)) //file in
     {
@@ -807,10 +874,19 @@ int main(int argc, char* argv[]) {
             return 0;
         }
 
+        u8* filename_out = argv[2];
+
+        //todo: argv[3] start-end address disassembly of filein
+
+
+
         if (IsValidPath(filename_out)) //file out
         {
             FILE* file_out = fopen(filename_out, "w+");
             if (file_out == NULL) return 0; //couldn't create file
+
+
+
 
             printf("Starting disassembly of \"%s\".\n", filename_in);
             if (DisassembleFile_fileout(file_in, file_out))
