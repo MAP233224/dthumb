@@ -783,7 +783,7 @@ int IsValidPath(u8* path) {
     if (!path || !path[0]) return 0; //needs to be at least one char
     for (u32 i = 1; i < PATH_LENGTH; i++)
     {
-        if (path[i] == '\0') return 1; //found the end of string char within PATH_LENGTH
+        if (!path[i]) return 1; //found EOM
     }
     return 0;
 }
@@ -791,6 +791,9 @@ int IsValidPath(u8* path) {
 int main(int argc, char* argv[]) {
 
     //DumpAllInstructions();
+
+    //todo: argv[3] number of instructions (or byte?) to disassemble
+    //todo: argv[4] start of disassembly address in the input file
 
     u8* filename_in = argv[1];
     u8* filename_out = argv[2];
