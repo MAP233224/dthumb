@@ -831,6 +831,8 @@ int IfValidRangeSet(FILERANGE* range, u8* r) {
 
     u8 dashcount = 0;
     u32 address = 0;
+    u32 start = 0;
+    u32 end = 0;
 
     if (!r || !r[0]) return 0; //needs to be at least one char
     for (u32 i = 0; i < 18; i++) //"01234567-89abcdef" is 18 chars (null terminator included)
@@ -839,7 +841,7 @@ int IfValidRangeSet(FILERANGE* range, u8* r) {
 
         switch (IsValidHexChar(r[i]))
         {
-        case 0: return 0;
+        case 0: return 0; //not a valid hex char
         case 1: //regular digit
         {
             address = address * 16 + HexLetterToNumber(r[i]);
@@ -847,13 +849,34 @@ int IfValidRangeSet(FILERANGE* range, u8* r) {
         }
         case 2: //dash
         {
-            address = 0;
-            if (dashcount++ > 2) return 0; //can't have more than 2 dashes
+            switch (dashcount)
+            {
+            case 0:
+            {
+                start = address; //todo: substract ascii from address before assigning
+                address = 0;
+                break;
+            }
+            case 1:
+            {
+                end = address; //todo: substract ascii from address before assigning
+                address = 0;
+                break;
+            }
+            default: return 0; //can't have more than 2 dashes
+            }
+            dashcount++;
             break;
         }
         }
     }
-    //if start > end or start == end, invalid
+
+    if (start > end || start == end) return 0;
+
+    /* Success, set */
+    range->start = start;
+    range->end = end;
+    return 1;
 }
 
 
@@ -877,7 +900,15 @@ int main(int argc, char* argv[]) {
         u8* filename_out = argv[2];
 
         //todo: argv[3] start-end address disassembly of filein
-
+        FILERANGE filerange = { 0 };
+        if (IfValidRangeSet(&filerange, argv[3]))
+        {
+            printf("IfValidRangeSet returned 1.\n");
+        }
+        else
+        {
+            printf("IfValidRangeSet returned 0.\n");
+        }
 
 
         if (IsValidPath(filename_out)) //file out
