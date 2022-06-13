@@ -566,7 +566,7 @@ u32 Disassemble_thumb(u32 code, u8 str[STRING_LENGTH], u32 it, const u8* cond, A
         break;
     }
 
-    case 6: //0xC000 //B, SVC, LDMIA, STMIA
+    case 6: //0xC000 //B, SWI, LDMIA, STMIA
     {
         if (BITS(c, 12, 1)) //Conditional branch, Undefined, System call
         {
@@ -577,9 +577,9 @@ u32 Disassemble_thumb(u32 code, u8 str[STRING_LENGTH], u32 it, const u8* cond, A
                 sprintf(str, "udf #%X", BITS(c, 0, 8));
                 break;
             }
-            case 15: //SVC
+            case 15: //SWI
             {
-                sprintf(str, "svc #%X", BITS(c, 0, 8));
+                sprintf(str, "swi #%X", BITS(c, 0, 8));
                 break;
             }
             default: //B conditional
@@ -748,10 +748,13 @@ void Disassemble_arm(u32 code, u8 str[STRING_LENGTH], ARMARCH av) {
     case 7: //todo
     {
         //if (cond == NV) break; //only unpredictable prior to ARMv5
+        if (BITS(c, 24, 1)) //SWI
+        {
+            sprintf(str, "swi%s #%X", ConditionFlags[cond], BITS(c, 0, 24));
+        }
         //else
         //Coprocessor data processing
         //Coprocessor register transfer
-        //Software interrupt
         break;
     }
     //also: unconditionnal instructions if bits 28 to 31 are 1111
