@@ -6,3 +6,5 @@ You can optionally provide a range of addresses to be disassembled (in hexadecim
 ```
 dthumb <filein> [<fileout>] [start]-[end]
 ```
+  
+Coming soon: support for ARM instructions
