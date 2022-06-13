@@ -713,46 +713,10 @@ int GetFileSize_mine(FILE* fp) {
     return size;
 }
 
-//todo: merge the two DisassembleFile functions into one
-
-int DisassembleFile_stdout(FILE* in, FILERANGE* range) {
-    /* Disassemble from a binary file, print to stdout */
-    int size = GetFileSize_mine(in);
-    if (range->end && (range->end < size))
-    {
-        size = range->end;
-    }
-    printf("Disassembly of %u bytes:\n\n", range->end - range->start);
-
-    fseek(in, range->start, SEEK_SET);
-
-    for (int i = range->start; i < (range->start + size) / 2; i++)
-    {
-        u8 str[STRING_LENGTH] = { 0 };
-        u32 code = 0;
-        fread(&code, 4, 1, in); //prefetch 32 bits
-        if (Disassemble(code, 0, str, 0, "", ARMv5TE)) //32-bit
-        {
-            CheckSpecialRegister(str);
-            printf("%08X: %08X %s\n", range->start + (i - range->start) * 2, code, str);
-            i++;
-        }
-        else //16-bit
-        {
-            fseek(in, -2, SEEK_CUR); //go back 2 bytes
-            CheckSpecialRegister(str);
-            printf("%08X: %04X     %s\n", range->start + (i - range->start) * 2, code & 0xffff, str);
-        }
-    }
-
-    printf("\n%u unknown instructions.\n", debug_na_count);
-    fclose(in);
-    return 1; //success
-}
-
-int DisassembleFile_fileout(FILE* in, FILE* out, FILERANGE* range) {
+int DisassembleFile(FILE* in, FILE* out, FILERANGE* range) {
     /* Disassemble from a binary file, print to another file */
     int size = GetFileSize_mine(in);
+    if (range->start > size || range->end > size) return 0;
     if (range->end && (range->end < size))
     {
         size = range->end;
@@ -781,19 +745,25 @@ int DisassembleFile_fileout(FILE* in, FILE* out, FILERANGE* range) {
     }
 
     fprintf(out, "\n%u unknown instructions.\n", debug_na_count);
-    fclose(in);
-    fclose(out);
     return 1; //success
 }
 
 int IsValidPath(u8* path) {
     /* Check if length of path/filename is */
     //todo: check if you can also open it
+    //todo: check for "." in the name, need file extension
+    u32 hasDotAndEom = 0;
     if (!path || !path[0]) return 0; //needs to be at least one char
     for (u32 i = 1; i < PATH_LENGTH; i++)
     {
-        if (!path[i]) return 1; //found EOM
+        if (path[i] == '.') hasDotAndEom = 1;
+        if (!path[i])
+        {
+            hasDotAndEom++;
+            break; //found EOM
+        }
     }
+    if (hasDotAndEom == 2) return 1;
     return 0;
 }
 
@@ -818,10 +788,8 @@ int IfValidRangeSet(FILERANGE* range, u8* r) {
         i++;
     }
 
-    //if (str[0] == '-' && str[1] == '-')
-    if (*(u16*)str == 0x2d2d) //double dash
+    if (*(u16*)str == 0x2d2d) //detect double dash
     {
-        //start = 0;
         end = strtol(&str[2], NULL, 16);
     }
     else
@@ -837,8 +805,11 @@ int IfValidRangeSet(FILERANGE* range, u8* r) {
         }
     }
 
-    if (end && (start > end)) return 0; //start can't be greater than end if end is non-zero
-    //todo: if start==end==0 valid, dis all file
+    if (end && (start > end))
+    {
+        printf("WARNING: If END is specified and non-zero, it cannot be greater than START. The whole file will be disassembled.\n");
+        return 0; //start can't be greater than end if end is non-zero
+    }
 
     /* Success, set */
     range->start = start;
@@ -852,57 +823,51 @@ int main(int argc, char* argv[]) {
     //Debug_DumpAllInstructions();
 
     u8* filename_in = argv[1];
+    u8* filename_out = NULL;
+    FILE* file_out = NULL;
+    FILERANGE filerange = { 0 };
+
     if (IsValidPath(filename_in)) //file in
     {
         FILE* file_in = fopen(filename_in, "rb");
         if (file_in == NULL)
         {
-            printf("The file \"%s\" doesn't exist.\n", filename_in);
+            printf("ERROR: The file \"%s\" doesn't exist. Aborting.\n", filename_in);
             return 0;
         }
 
-        u8* filename_out = argv[2];
-
-        //todo: allow range with stdout
-
-        FILERANGE filerange = { 0 };
-        if (filename_out) IfValidRangeSet(&filerange, argv[3]);
-
-        //if (filename_out)
-        //{
-        //    IfValidRangeSet(&filerange, argv[3]);
-        //}
-        //else
-        //{
-        //    IfValidRangeSet(&filerange, argv[2]);
-        //}
-
-        if (IsValidPath(filename_out)) //file out
+        if (IsValidPath(argv[2])) //file out
         {
-            FILE* file_out = fopen(filename_out, "w+");
-            if (file_out == NULL) return 0; //couldn't create file
+            filename_out = argv[2];
+            file_out = fopen(filename_out, "w+");
+            if (file_out == NULL) return 0; //couldn't create file for some reason
 
+            IfValidRangeSet(&filerange, argv[3]);
             printf("Starting disassembly of \"%s\".\n", filename_in);
-            if (DisassembleFile_fileout(file_in, file_out, &filerange))
+            if (DisassembleFile(file_in, file_out, &filerange))
             {
                 printf("Successfully disassembled \"%s\" to \"%s\".\n", filename_in, filename_out);
             }
             else
             {
-                printf("Error disassembling \"%s\" to \"%s\".\n", filename_in, filename_out);
+                printf("ERROR: DisassembleFile failed.\n");
             }
+            fclose(file_in);
+            fclose(file_out);
         }
         else //stdout
         {
+            IfValidRangeSet(&filerange, argv[2]);
             printf("Starting disassembly of \"%s\".\n", filename_in);
-            if (DisassembleFile_stdout(file_in, &filerange))
+            if (DisassembleFile(file_in, stdout, &filerange))
             {
                 printf("Successfully disassembled \"%s\".\n", filename_in);
             }
             else
             {
-                printf("Error disassembling \"%s\".\n", filename_in);
+                printf("ERROR: DisassembleFile failed.\n");
             }
+            fclose(file_in);
         }
         return 0;
     }
