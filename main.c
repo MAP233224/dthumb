@@ -11,7 +11,7 @@ typedef unsigned char u8;
 #define RANGE_LENGTH (18)
 #define STRING_LENGTH (64)
 #define CONDITIONS_MAX (16)
-#define BITS(x, b, n) ((x >> b) & ((1 << n) - 1)) //retrieves n bits from x starting at b
+#define BITS(x, b, n) ((x >> b) & ((1 << n) - 1)) //retrieves n bits from x starting at bit b
 #define SIGNEX32_BITS(x, b, n) ((BITS(x,b,n) ^ (1<<(n-1))) - (1<<(n-1))) //convert n-bit value to signed 32 bits
 #define SIGNEX32_VAL(x, n) ((x ^ (1<<(n-1))) - (1<<(n-1))) //convert n-bit value to signed 32 bits
 
@@ -712,19 +712,18 @@ void Disassemble_arm(u32 code, u8 str[STRING_LENGTH], ARMARCH av) {
         if (cond == NV) break; //undefined
         u8 reglist[STRING_LENGTH] = { 0 };
         FormatStringRegisterList_arm(reglist, BITS(c, 0, 16));
-        u8* w = BITS(c, 21, 1) ? "!" : ""; //W bit
-        u8* spsr_cpsr = BITS(c, 22, 1) ? "^" : ""; //
         u8 rn = BITS(c, 16, 4);
-        u8 am = BITS(c, 23, 2);
+        u8* w = BITS(c, 21, 1) ? "!" : ""; //W bit
+        u8* s = BITS(c, 22, 1) ? "^" : ""; //S bit
+        u8 am = BITS(c, 23, 2); //PU bits
         if (BITS(c, 20, 1)) //LDM
         {
-            sprintf(str, "ldm%s%s r%u%s, {%s}%s", ConditionFlags[cond], AddressingModes[am], rn, w, reglist, spsr_cpsr);
+            sprintf(str, "ldm%s%s r%u%s, {%s}%s", ConditionFlags[cond], AddressingModes[am], rn, w, reglist, s);
         }
         else //STM
         {
-            sprintf(str, "stm%s%s r%u%s, {%s}%s", ConditionFlags[cond], AddressingModes[am], rn, w, reglist, spsr_cpsr);
+            sprintf(str, "stm%s%s r%u%s, {%s}%s", ConditionFlags[cond], AddressingModes[am], rn, w, reglist, s);
         }
-
         break;
     }
     case 5: //todo
@@ -1013,7 +1012,6 @@ int main(int argc, char* argv[]) {
     }
 
     printf("Nothing was done\n");
-
 
     return 0;
 }
