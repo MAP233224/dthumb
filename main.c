@@ -43,7 +43,7 @@ typedef enum {
     GT, //signed greater than, Z==0 and N==V
     LE, //signed less than or equal, Z==1 or N!=V
     AL, //unconditional, only with IT instructions
-    AL2 //unconditional
+    NV  //unconditional, usually undefined
 }CONDITION;
 
 const u8 IT_xyz_0[CONDITIONS_MAX][4] = { //if then block suffixes
@@ -84,7 +84,14 @@ const u8 IT_xyz_1[CONDITIONS_MAX][4] = { //inverse of the one above
     "ttt"
 };
 
-const u8 ConditionFlags[CONDITIONS_MAX][3] = { "eq", "ne", "cs", "cc", "mi", "pl", "vs", "vc", "hi", "ls", "ge", "lt", "gt", "le", "al", "" };
+const u8 ConditionFlags[CONDITIONS_MAX][3] = { "eq", "ne", "cs", "cc", "mi", "pl", "vs", "vc", "hi", "ls", "ge", "lt", "gt", "le", "al", "" }; //last is "nv"
+
+const u8 AddressingModes[4][3] = {
+    "da", //Decrement after 00
+    "ia", //Increment after 01
+    "db", //Decrement before 10
+    "ib"  //Increment before 11
+};
 
 const u8 DataProcessingRegister[16][4] = {
     "and",
@@ -115,7 +122,7 @@ u32 debug_na_count = 0;
 
 /* FUNCTIONS */
 
-u32 FormatStringRegisterList(u8 str[48], u16 reg, const u8 pclr[3]) {
+u32 FormatStringRegisterList_thumb(u8 str[STRING_LENGTH], u16 reg, const u8 pclr[3]) {
     /**/
     //todo for later: maybe group consecutive registers together with a -
     u32 bits = 0;
@@ -130,6 +137,27 @@ u32 FormatStringRegisterList(u8 str[48], u16 reg, const u8 pclr[3]) {
             else sprintf(tmp, "r%u,", i); //r0-r7
             memcpy(&str[pos], tmp, sizeof(tmp));
             pos += 3; //depends on size of tmp
+        }
+    }
+    if (pos) str[pos - 1] = 0; //removes the coma on the last register
+    return bits; //number of 1 bits
+}
+
+u32 FormatStringRegisterList_arm(u8 str[STRING_LENGTH], u16 reg) {
+    /**/
+    //todo for later: maybe group consecutive registers together with a -
+    //todo: finish
+    u32 bits = 0;
+    u32 pos = 0; //position in the str array
+    for (u32 i = 0; i < 16; i++) //9 instead of 16 because of clever grouping
+    {
+        if (BITS(reg, i, 1))
+        {
+            bits++;
+            u8 tmp[5] = { 0 };
+            sprintf(tmp, "r%u,", i);
+            memcpy(&str[pos], tmp, sizeof(tmp));
+            pos = (i < 10) ? pos + 3 : pos + 4;
         }
     }
     if (pos) str[pos - 1] = 0; //removes the coma on the last register
@@ -166,11 +194,11 @@ void IfThen_reg_3(const u8* op, u8 str[STRING_LENGTH], u32 it, const u8* cond, u
     else sprintf(str, "%ss r%u, r%u, r%u", op, rd, rm, rn);
 }
 
-u32 Disassemble(u32 code, u32 fromstart, u8 str[STRING_LENGTH], u32 it, const u8* cond, ARMARCH tv) {
-    /*  */
+u32 Disassemble_thumb(u32 code, u8 str[STRING_LENGTH], u32 it, const u8* cond, ARMARCH tv) {
+    /* Convert a code into a string, return 0 if processed THUMB 16-bit, 1 if processed THUMB 32-bit  */
 
-    u32 thumb_size = 0; //return 0 if processed THUMB 16-bit, 1 if processed THUMB 32-bit
-    u16 c = code & 0xffff; //
+    u32 thumb_size = 0; //return value
+    u16 c = code & 0xffff; //low 16 bits
 
     switch (c >> 13)
     {
@@ -433,20 +461,20 @@ u32 Disassemble(u32 code, u32 fromstart, u8 str[STRING_LENGTH], u32 it, const u8
             case 12:
             case 13:
             {
-                u8 reglist[48] = { 0 };
-                u16 registers = BITS(c, 0, 9); //registers = P:'0000000':register_list
+                u8 reglist[STRING_LENGTH] = { 0 };
+                u16 registers = BITS(c, 0, 9);
                 if (BITS(c, 11, 1)) //POP
                 {
-                    if (FormatStringRegisterList(reglist, registers, "pc")) //if BitCount(registers) < 1 then UNPREDICTABLE
+                    if (FormatStringRegisterList_thumb(reglist, registers, "pc")) //if BitCount(registers) < 1 then UNPREDICTABLE
                     {
-                        sprintf(str, "pop {%s}", reglist); //todo: format register list
+                        sprintf(str, "pop {%s}", reglist);
                     }
                 }
                 else //PUSH
                 {
-                    if (FormatStringRegisterList(reglist, registers, "lr")) //if BitCount(registers) < 1 then UNPREDICTABLE
+                    if (FormatStringRegisterList_thumb(reglist, registers, "lr")) //if BitCount(registers) < 1 then UNPREDICTABLE
                     {
-                        sprintf(str, "push {%s}", reglist); //todo: format register list
+                        sprintf(str, "push {%s}", reglist);
                     }
                 }
                 break;
@@ -556,18 +584,18 @@ u32 Disassemble(u32 code, u32 fromstart, u8 str[STRING_LENGTH], u32 it, const u8
             }
             default: //B conditional
             {
-                sprintf(str, "b%s #%X", ConditionFlags[BITS(c, 8, 4)], 4 + 2 * (fromstart + SIGNEX32_BITS(c, 0, 8)));
+                sprintf(str, "b%s #%X", ConditionFlags[BITS(c, 8, 4)], 4 + 2 * SIGNEX32_BITS(c, 0, 8));
             }
             }
         }
         else //Load/store multiple
         {
-            u8 reglist[48] = { 0 };
+            u8 reglist[STRING_LENGTH] = { 0 };
             u16 registers = BITS(c, 0, 8);
             u8 rn = BITS(c, 8, 3);
             if (BITS(c, 11, 1)) //LDMIA (LDMFD)
             {
-                if (FormatStringRegisterList(reglist, registers, ""))
+                if (FormatStringRegisterList_thumb(reglist, registers, ""))
                 {
                     if (BITS(registers, rn, 1)) sprintf(str, "ldmia r%u, {%s}", rn, reglist); //no '!' because rn is also in registers
                     else sprintf(str, "ldmia r%u!, {%s}", rn, reglist);
@@ -575,7 +603,7 @@ u32 Disassemble(u32 code, u32 fromstart, u8 str[STRING_LENGTH], u32 it, const u8
             }
             else //STMIA (STMEA)
             {
-                if (FormatStringRegisterList(reglist, registers, ""))
+                if (FormatStringRegisterList_thumb(reglist, registers, ""))
                 {
                     sprintf(str, "stmia r%u!, {%s}", rn, reglist);
                 }
@@ -590,7 +618,7 @@ u32 Disassemble(u32 code, u32 fromstart, u8 str[STRING_LENGTH], u32 it, const u8
         {
         case 0:
         {
-            sprintf(str, "b #%X", 4 + 2 * (fromstart + SIGNEX32_BITS(c, 0, 11))); //11 bits to signed 32 bits
+            sprintf(str, "b #%X", 4 + 2 * SIGNEX32_BITS(c, 0, 11)); //11 bits to signed 32 bits
             break;
         }
         //case 1: break; //undefined on first pass
@@ -607,7 +635,7 @@ u32 Disassemble(u32 code, u32 fromstart, u8 str[STRING_LENGTH], u32 it, const u8
                     {
                         thumb_size++;
                         u32 ofs = ((BITS((code & 0xffff), 0, 10) << 10) | (BITS(c, 1, 10))) << 2;
-                        sprintf(str, "blx #%X", 4 + fromstart + SIGNEX32_VAL(ofs, 22));
+                        sprintf(str, "blx #%X", 4 + SIGNEX32_VAL(ofs, 22));
                     }
                     break;
                 }
@@ -616,7 +644,7 @@ u32 Disassemble(u32 code, u32 fromstart, u8 str[STRING_LENGTH], u32 it, const u8
                 {
                     thumb_size++;
                     u32 ofs = ((BITS((code & 0xffff), 0, 10) << 11) | (BITS(c, 0, 11))) << 1;
-                    sprintf(str, "bl #%X", 4 + fromstart + (int)SIGNEX32_VAL(ofs, 22));
+                    sprintf(str, "bl #%X", 4 + (int)SIGNEX32_VAL(ofs, 22));
                     break;
                 }
                 }
@@ -634,6 +662,108 @@ u32 Disassemble(u32 code, u32 fromstart, u8 str[STRING_LENGTH], u32 it, const u8
     }
     return thumb_size;
 }
+
+void Disassemble_arm(u32 code, u8 str[STRING_LENGTH], ARMARCH av) {
+    /**/
+    //only supports ARMv5
+
+    u32 c = code; //alias
+
+    //Page 68 of 811 from the ARM Architecture reference manual june 2000 edition
+
+    u8 cond = BITS(c, 28, 4);
+
+    switch (BITS(c, 25, 3))
+    {
+    case 0: //todo
+    {
+        if (cond == NV) break; //undefined
+        //else
+        //Data processing immediate shift
+        //Miscellanous instructions, see fig 3-3
+        //Data processing register shift
+        //Multiplies, extra load/stores: see fig 3-2
+        break;
+    }
+    case 1: //todo
+    {
+        if (cond == NV) break; //undefined
+        //else
+        //Data processing immediate
+        //Move immediate to status register
+        break;
+    }
+    case 2: //todo
+    {
+        if (cond == NV) break; //undefined
+        //else
+        //Load/store immediate offset
+        break;
+    }
+    case 3: //todo
+    {
+        if (cond == NV) break; //undefined
+        //else
+        //Load/store register offset
+        break;
+    }
+    case 4: //Load/store multiple
+    {
+        if (cond == NV) break; //undefined
+        u8 reglist[STRING_LENGTH] = { 0 };
+        FormatStringRegisterList_arm(reglist, BITS(c, 0, 16));
+        u8* w = BITS(c, 21, 1) ? "!" : ""; //W bit
+        u8* spsr_cpsr = BITS(c, 22, 1) ? "^" : ""; //
+        u8 rn = BITS(c, 16, 4);
+        u8 am = BITS(c, 23, 2);
+        if (BITS(c, 20, 1)) //LDM
+        {
+            sprintf(str, "ldm%s%s r%u%s, {%s}%s", ConditionFlags[cond], AddressingModes[am], rn, w, reglist, spsr_cpsr);
+        }
+        else //STM
+        {
+            sprintf(str, "stm%s%s r%u%s, {%s}%s", ConditionFlags[cond], AddressingModes[am], rn, w, reglist, spsr_cpsr);
+        }
+
+        break;
+    }
+    case 5: //todo
+    {
+        if (cond == NV)
+        {
+            //Branch and branch with link and exchange
+        }
+        else
+        {
+            //Branch and branch with link
+        }
+        break;
+    }
+    case 6: //todo
+    {
+        //if (cond == NV) break; //only unpredictable prior to ARMv5
+        //else
+        //Coprocessor load/store and double register transfers
+        break;
+    }
+    case 7: //todo
+    {
+        //if (cond == NV) break; //only unpredictable prior to ARMv5
+        //else
+        //Coprocessor data processing
+        //Coprocessor register transfer
+        //Software interrupt
+        break;
+    }
+    //also: unconditionnal instructions if bits 28 to 31 are 1111
+    }
+    if (!str[0]) //in case nothing was written to it
+    {
+        debug_na_count++;
+        sprintf(str, "n/a");
+    }
+}
+
 
 void SubstituteSubString(u8 dst[STRING_LENGTH], u32 index, const u8* sub, u32 size) {
     /* Insert sub string of length size (< STRING_LENGTH) at dst[index] */
@@ -687,6 +817,14 @@ THUMB: CPS, CPY, REV, SETEND, SXTB, SXTH, UXTB, UXTH
 
 */
 
+
+void Debug_DisassembleArm(u32 c) {
+    /* Debug: disassemble a single ARM instruction from the ARMv5TE architecture */
+    u8 s[STRING_LENGTH] = { 0 };
+    Disassemble_arm(c, s, ARMv5TE);
+    printf("%08X -> %s\n", c, s);
+}
+
 void Debug_DumpAllInstructions(void) {
     /* Debug: call only when you want to dump the complete THUMB instruction set to a file */
 
@@ -695,7 +833,7 @@ void Debug_DumpAllInstructions(void) {
     for (u32 code = 0; code <= 0xffff; code++)
     {
         u8 str[STRING_LENGTH] = { 0 };
-        Disassemble(code, 0, str, 0, "", ARMv5TE);
+        Disassemble_thumb(code, str, 0, "", ARMv5TE);
         CheckSpecialRegister(str);
         fprintf(fp, "%04X %s\n", code, str);
     }
@@ -730,7 +868,7 @@ int DisassembleFile(FILE* in, FILE* out, FILERANGE* range) {
         u8 str[STRING_LENGTH] = { 0 };
         u32 code = 0;
         fread(&code, 4, 1, in); //prefetch 32 bits
-        if (Disassemble(code, 0, str, 0, "", ARMv5TE)) //32-bit
+        if (Disassemble_thumb(code, str, 0, "", ARMv5TE)) //32-bit
         {
             CheckSpecialRegister(str);
             fprintf(out, "%08X: %08X %s\n", range->start + (i - range->start) * 2, code, str);
@@ -817,10 +955,11 @@ int IfValidRangeSet(FILERANGE* range, u8* r) {
     return 1;
 }
 
-
 int main(int argc, char* argv[]) {
 
     //Debug_DumpAllInstructions();
+    //Debug_DisassembleArm(0x38090410);
+
 
     u8* filename_in = argv[1];
     u8* filename_out = NULL;
@@ -874,5 +1013,7 @@ int main(int argc, char* argv[]) {
     }
 
     printf("Nothing was done\n");
+
+
     return 0;
 }
