@@ -1,6 +1,6 @@
 #include <stdio.h>
 #include <string.h>
-
+#include <stdlib.h>
 //#define _CRT_SECURE_NO_WARNINGS 1
 
 typedef unsigned int u32;
@@ -8,6 +8,7 @@ typedef unsigned short u16;
 typedef unsigned char u8;
 
 #define PATH_LENGTH (256)
+#define RANGE_LENGTH (18)
 #define STRING_LENGTH (64)
 #define CONDITIONS_MAX (16)
 #define BITS(x, b, n) ((x >> b) & ((1 << n) - 1)) //retrieves n bits from x starting at b
@@ -792,34 +793,6 @@ typedef struct {
     u32 end; //end address
 }FILERANGE;
 
-
-int IsValidIntString_hex(u8* b, u32 size) {
-    /* Valid characters are 0~9 and A~F */
-    for (u8 i = 0; i < size; i++) {
-        if (b[i] < '0' || b[i] > 'F') return 0;
-        if (b[i] > '9' && b[i] < 'A') return 0;
-    }
-    return 1;
-}
-
-int IsValidHexChar(u8 b) {
-    /* Valid characters are 0~9 and A~F */
-    if (b == '-') return 2; //dash special case
-    if (b < '0' || b > 'F') return 0;
-    if (b > '9' && b < 'A') return 0;
-    return 1;
-}
-
-u8 HexLetterToNumber(u8 n) {
-    /* Virtually apends the capital letters right after 9 in the ASCII table */
-    switch (n) {
-    case 'A': case 'B': case 'C': case 'D': case 'E': case 'F':
-        return n - 7;
-    default:
-        return n;
-    }
-}
-
 int IfValidRangeSet(FILERANGE* range, u8* r) {
     /* Check to see if the range string yields a valid FILERANGE */
     //acceptable formats:
@@ -827,51 +800,41 @@ int IfValidRangeSet(FILERANGE* range, u8* r) {
     //"--%x" //unspecified start (default to beginning of file, 0) to end
     //"%x--" //start to unspecified end (default to end of file)
 
-    //todo: complete
-
-    u8 dashcount = 0;
-    u32 address = 0;
     u32 start = 0;
     u32 end = 0;
 
     if (!r || !r[0]) return 0; //needs to be at least one char
-    for (u32 i = 0; i < 18; i++) //"01234567-89abcdef" is 18 chars (null terminator included)
-    {
-        if (!r[i]) break; //EOM
 
-        switch (IsValidHexChar(r[i]))
+    /* Init buffer (memcpy with two limit conditions) */
+    u8 str[RANGE_LENGTH] = { 0 };
+    u32 i = 0;
+    while (r[i] && (i < RANGE_LENGTH - 1)) //must be null terminated
+    {
+        str[i] = r[i];
+        i++;
+    }
+
+    //if (str[0] == '-' && str[1] == '-')
+    if (*(u16*)str == 0x2d2d) //double dash
+    {
+        //start = 0;
+        end = strtol(&str[2], NULL, 16);
+    }
+    else
+    {
+        for (u32 i = 0; i < RANGE_LENGTH; i++)
         {
-        case 0: return 0; //not a valid hex char
-        case 1: //regular digit
-        {
-            address = address * 16 + HexLetterToNumber(r[i]);
-            break;
-        }
-        case 2: //dash
-        {
-            switch (dashcount)
+            if (str[i] == '-') //first dash
             {
-            case 0:
-            {
-                start = address; //todo: substract ascii from address before assigning
-                address = 0;
+                start = strtol(str, NULL, 16);
+                end = strtol(&str[i + 1], NULL, 16);
                 break;
             }
-            case 1:
-            {
-                end = address; //todo: substract ascii from address before assigning
-                address = 0;
-                break;
-            }
-            default: return 0; //can't have more than 2 dashes
-            }
-            dashcount++;
-            break;
-        }
         }
     }
 
-    if (start > end || start == end) return 0;
+    if (end && (start > end)) return 0; //start can't be greater than end if end is non-zero
+    //todo: if start==end==0 valid, dis all file
 
     /* Success, set */
     range->start = start;
