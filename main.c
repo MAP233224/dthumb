@@ -824,12 +824,13 @@ int main(int argc, char* argv[]) {
 
     u8* filename_in = argv[1];
     u8* filename_out = NULL;
+    FILE* file_in = NULL;
     FILE* file_out = NULL;
     FILERANGE filerange = { 0 };
 
     if (IsValidPath(filename_in)) //file in
     {
-        FILE* file_in = fopen(filename_in, "rb");
+        file_in = fopen(filename_in, "rb");
         if (file_in == NULL)
         {
             printf("ERROR: The file \"%s\" doesn't exist. Aborting.\n", filename_in);
