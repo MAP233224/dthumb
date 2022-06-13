@@ -15,6 +15,11 @@ typedef unsigned char u8;
 #define SIGNEX32_BITS(x, b, n) ((BITS(x,b,n) ^ (1<<(n-1))) - (1<<(n-1))) //convert n-bit value to signed 32 bits
 #define SIGNEX32_VAL(x, n) ((x ^ (1<<(n-1))) - (1<<(n-1))) //convert n-bit value to signed 32 bits
 
+typedef struct {
+    int start; //starting address
+    int end; //end address
+}FILERANGE;
+
 typedef enum {
     ARMv4T, //ARM v4, THUMB v1
     ARMv5TE, //ARM v5, THUMB v2
@@ -41,7 +46,7 @@ typedef enum {
     AL2 //unconditional
 }CONDITION;
 
-const u8 IT_xyz_0[CONDITIONS_MAX][4] = { //inverse of the one above
+const u8 IT_xyz_0[CONDITIONS_MAX][4] = { //if then block suffixes
     "", //doesn't exist
     "ttt",
     "tt",
@@ -79,7 +84,6 @@ const u8 IT_xyz_1[CONDITIONS_MAX][4] = { //inverse of the one above
     "ttt"
 };
 
-
 const u8 ConditionFlags[CONDITIONS_MAX][3] = { "eq", "ne", "cs", "cc", "mi", "pl", "vs", "vc", "hi", "ls", "ge", "lt", "gt", "le", "al", "" };
 
 const u8 DataProcessingRegister[16][4] = {
@@ -106,10 +110,7 @@ const u8 LoadStoreRegister[8][6] = { "str", "strh", "strb", "ldrsb", "ldr", "ldr
 const u8 CPS_effect[2][3] = { "ie","id" };
 const u8 CPS_flags[8][5] = { "none", "f", "i", "if", "a", "af", "ai", "aif" };
 const u8 SignZeroExtend[4][5] = { "sxth","sxtb","uxth","uxtb" };
-
 //const u8 ShiftImmediate[3][4] = { "lsl", "lsr","asr" };
-
-
 u32 debug_na_count = 0;
 
 /* FUNCTIONS */
@@ -134,7 +135,6 @@ u32 FormatStringRegisterList(u8 str[48], u16 reg, const u8 pclr[3]) {
     if (pos) str[pos - 1] = 0; //removes the coma on the last register
     return bits; //number of 1 bits
 }
-
 
 u32 CountBits(u8 b) {
     /* Count bits in a byte */
@@ -164,11 +164,6 @@ void IfThen_reg_3(const u8* op, u8 str[STRING_LENGTH], u32 it, const u8* cond, u
     /* Formatting */
     if (it) sprintf(str, "%s%s r%u, r%u, r%u", op, cond, rd, rm, rn);
     else sprintf(str, "%ss r%u, r%u, r%u", op, rd, rm, rn);
-}
-
-u16 Fetch(void) {
-    /* Gets the next 16-bit instruction in line */
-    return 0;
 }
 
 u32 Disassemble(u32 code, u32 fromstart, u8 str[STRING_LENGTH], u32 it, const u8* cond, ARMARCH tv) {
@@ -642,8 +637,8 @@ u32 Disassemble(u32 code, u32 fromstart, u8 str[STRING_LENGTH], u32 it, const u8
 
 void SubstituteSubString(u8 dst[STRING_LENGTH], u32 index, const u8* sub, u32 size) {
     /* Insert sub string of length size (< STRING_LENGTH) at dst[index] */
-    u8 tmp[STRING_LENGTH] = { 0 };
-    memcpy(&tmp, sub, size);
+    u8 tmp[STRING_LENGTH] = { 0 }; //zinit
+    memcpy(&tmp, sub, size); //init
     memcpy(&tmp[size], &dst[index + size + 1], STRING_LENGTH - index - size - 1); //save
     memcpy(&dst[index], tmp, STRING_LENGTH - index - 1); //restore
 }
@@ -692,8 +687,8 @@ THUMB: CPS, CPY, REV, SETEND, SXTB, SXTH, UXTB, UXTH
 
 */
 
-
-void DumpAllInstructions(void) {
+void Debug_DumpAllInstructions(void) {
+    /* Debug: call only when you want to dump the complete THUMB instruction set to a file */
 
     FILE* fp = fopen("ARMv5TE_THUMB_instruction_set.txt", "w+");
 
@@ -718,41 +713,20 @@ int GetFileSize_mine(FILE* fp) {
     return size;
 }
 
-int DisassembleFile_stdout(FILE* fp) {
-    /**/
-    int size = GetFileSize_mine(fp);
-    printf("Disassembly of %u bytes:\n\n", size);
+//todo: merge the two DisassembleFile functions into one
 
-    for (int i = 0; i < size / 2; i++)
-    {
-        u8 str[STRING_LENGTH] = { 0 };
-        u32 code = 0;
-        fread(&code, 4, 1, fp); //prefetch 32 bits
-        if (Disassemble(code, 0, str, 0, "", ARMv5TE)) //32-bit
-        {
-            CheckSpecialRegister(str);
-            printf("%08X: %08X %s\n", i * 2, code, str);
-            i++;
-        }
-        else //16-bit
-        {
-            fseek(fp, -2, SEEK_CUR); //go back 2 bytes
-            CheckSpecialRegister(str);
-            printf("%08X: %04X %s\n", i * 2, code & 0xffff, str);
-        }
-    }
-
-    printf("\n%u unknown instructions.\n", debug_na_count);
-    fclose(fp);
-    return 1; //success
-}
-
-int DisassembleFile_fileout(FILE* in, FILE* out) {
-    /**/
+int DisassembleFile_stdout(FILE* in, FILERANGE* range) {
+    /* Disassemble from a binary file, print to stdout */
     int size = GetFileSize_mine(in);
-    fprintf(out, "Disassembly of %u bytes:\n\n", size);
+    if (range->end && (range->end < size))
+    {
+        size = range->end;
+    }
+    printf("Disassembly of %u bytes:\n\n", range->end - range->start);
 
-    for (int i = 0; i < size / 2; i++)
+    fseek(in, range->start, SEEK_SET);
+
+    for (int i = range->start; i < (range->start + size) / 2; i++)
     {
         u8 str[STRING_LENGTH] = { 0 };
         u32 code = 0;
@@ -760,14 +734,49 @@ int DisassembleFile_fileout(FILE* in, FILE* out) {
         if (Disassemble(code, 0, str, 0, "", ARMv5TE)) //32-bit
         {
             CheckSpecialRegister(str);
-            fprintf(out, "%08X: %08X %s\n", i * 2, code, str);
+            printf("%08X: %08X %s\n", range->start + (i - range->start) * 2, code, str);
             i++;
         }
         else //16-bit
         {
             fseek(in, -2, SEEK_CUR); //go back 2 bytes
             CheckSpecialRegister(str);
-            fprintf(out, "%08X: %04X %s\n", i * 2, code & 0xffff, str);
+            printf("%08X: %04X     %s\n", range->start + (i - range->start) * 2, code & 0xffff, str);
+        }
+    }
+
+    printf("\n%u unknown instructions.\n", debug_na_count);
+    fclose(in);
+    return 1; //success
+}
+
+int DisassembleFile_fileout(FILE* in, FILE* out, FILERANGE* range) {
+    /* Disassemble from a binary file, print to another file */
+    int size = GetFileSize_mine(in);
+    if (range->end && (range->end < size))
+    {
+        size = range->end;
+    }
+    fprintf(out, "Disassembly of %u bytes:\n\n", range->end - range->start);
+
+    fseek(in, range->start, SEEK_SET);
+
+    for (int i = range->start; i < (range->start + size) / 2; i++)
+    {
+        u8 str[STRING_LENGTH] = { 0 };
+        u32 code = 0;
+        fread(&code, 4, 1, in); //prefetch 32 bits
+        if (Disassemble(code, 0, str, 0, "", ARMv5TE)) //32-bit
+        {
+            CheckSpecialRegister(str);
+            fprintf(out, "%08X: %08X %s\n", range->start + (i - range->start) * 2, code, str);
+            i++;
+        }
+        else //16-bit
+        {
+            fseek(in, -2, SEEK_CUR); //go back 2 bytes
+            CheckSpecialRegister(str);
+            fprintf(out, "%08X: %04X     %s\n", range->start + (i - range->start) * 2, code & 0xffff, str);
         }
     }
 
@@ -788,14 +797,9 @@ int IsValidPath(u8* path) {
     return 0;
 }
 
-typedef struct {
-    u32 start; //starting address
-    u32 end; //end address
-}FILERANGE;
-
 int IfValidRangeSet(FILERANGE* range, u8* r) {
     /* Check to see if the range string yields a valid FILERANGE */
-    //acceptable formats:
+    //Acceptable formats:
     //"%x-%x" //start to end
     //"--%x" //unspecified start (default to beginning of file, 0) to end
     //"%x--" //start to unspecified end (default to end of file)
@@ -845,12 +849,9 @@ int IfValidRangeSet(FILERANGE* range, u8* r) {
 
 int main(int argc, char* argv[]) {
 
-    //DumpAllInstructions();
-
-
+    //Debug_DumpAllInstructions();
 
     u8* filename_in = argv[1];
-
     if (IsValidPath(filename_in)) //file in
     {
         FILE* file_in = fopen(filename_in, "rb");
@@ -862,28 +863,27 @@ int main(int argc, char* argv[]) {
 
         u8* filename_out = argv[2];
 
-        //todo: argv[3] start-end address disassembly of filein
-        FILERANGE filerange = { 0 };
-        if (IfValidRangeSet(&filerange, argv[3]))
-        {
-            printf("IfValidRangeSet returned 1.\n");
-        }
-        else
-        {
-            printf("IfValidRangeSet returned 0.\n");
-        }
+        //todo: allow range with stdout
 
+        FILERANGE filerange = { 0 };
+        if (filename_out) IfValidRangeSet(&filerange, argv[3]);
+
+        //if (filename_out)
+        //{
+        //    IfValidRangeSet(&filerange, argv[3]);
+        //}
+        //else
+        //{
+        //    IfValidRangeSet(&filerange, argv[2]);
+        //}
 
         if (IsValidPath(filename_out)) //file out
         {
             FILE* file_out = fopen(filename_out, "w+");
             if (file_out == NULL) return 0; //couldn't create file
 
-
-
-
             printf("Starting disassembly of \"%s\".\n", filename_in);
-            if (DisassembleFile_fileout(file_in, file_out))
+            if (DisassembleFile_fileout(file_in, file_out, &filerange))
             {
                 printf("Successfully disassembled \"%s\" to \"%s\".\n", filename_in, filename_out);
             }
@@ -895,7 +895,7 @@ int main(int argc, char* argv[]) {
         else //stdout
         {
             printf("Starting disassembly of \"%s\".\n", filename_in);
-            if (DisassembleFile_stdout(file_in))
+            if (DisassembleFile_stdout(file_in, &filerange))
             {
                 printf("Successfully disassembled \"%s\".\n", filename_in);
             }
