@@ -1,6 +1,21 @@
+//Nintendo DS CPU: ARM946E-S
+//Architecture: ARMv5TE
+//ARM version: 5
+//THUMB version: 2
+
+/*
+Instructions available in ARMv6 but not ARMv5TE:
+
+ARM: BXJ, CPS, CPY, MCRR2, MRRC2, PKH, QADD16, QADD8, QADDSUBX, QSUB16, QSUB8, QSUBADDX, REV, RFE, SADD, SEL, SETEND, SHADD, SHSUB, SMLAD,
+SMLALD, SMLSD, SMLSLD, SMMLA, SMMLS, SMMUL, SMUAD, SMUSD, SRS, SSAT, SSUB, STREX, SXT, UADD, UHADD, UQADD, UQSUB, USAD, USAT, USUB, UXT,
+
+THUMB: CPS, CPY, REV, SETEND, SXTB, SXTH, UXTB, UXTH
+*/
+
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+
 //#define _CRT_SECURE_NO_WARNINGS 1
 
 typedef unsigned int u32;
@@ -24,7 +39,6 @@ typedef enum {
     ARMv4T, //ARM v4, THUMB v1
     ARMv5TE, //ARM v5, THUMB v2
     ARMv6, //ARM v6, THUMB v3
-    //ARMv7
 }ARMARCH; //only 32-bit legacy architectures with THUMB support
 
 typedef enum {
@@ -45,6 +59,8 @@ typedef enum {
     AL, //unconditional, only with IT instructions
     NV  //unconditional, usually undefined
 }CONDITION;
+
+const u8 ConditionFlags[CONDITIONS_MAX][3] = { "eq", "ne", "cs", "cc", "mi", "pl", "vs", "vc", "hi", "ls", "ge", "lt", "gt", "le", "al", "" }; //last is "nv"
 
 const u8 IT_xyz_0[CONDITIONS_MAX][4] = { //if then block suffixes
     "", //doesn't exist
@@ -84,13 +100,11 @@ const u8 IT_xyz_1[CONDITIONS_MAX][4] = { //inverse of the one above
     "ttt"
 };
 
-const u8 ConditionFlags[CONDITIONS_MAX][3] = { "eq", "ne", "cs", "cc", "mi", "pl", "vs", "vc", "hi", "ls", "ge", "lt", "gt", "le", "al", "" }; //last is "nv"
-
 const u8 AddressingModes[4][3] = {
-    "da", //Decrement after 00
-    "ia", //Increment after 01
-    "db", //Decrement before 10
-    "ib"  //Increment before 11
+    "da", //Decrement after
+    "ia", //Increment after
+    "db", //Decrement before
+    "ib"  //Increment before
 };
 
 const u8 DataProcessingRegister[16][4] = {
@@ -726,15 +740,22 @@ void Disassemble_arm(u32 code, u8 str[STRING_LENGTH], ARMARCH av) {
         }
         break;
     }
-    case 5: //todo
+    case 5: //Branch instructions
     {
-        if (cond == NV)
+        if (cond == NV) //BLX
         {
-            //Branch and branch with link and exchange
+            sprintf(str, "blx #%X", 8 + 4 * SIGNEX32_BITS(c, 0, 24) + 2 * BITS(c, 24, 1));
         }
-        else
+        else //Branch and branch with link
         {
-            //Branch and branch with link
+            if (BITS(c, 24, 1)) //BL
+            {
+                sprintf(str, "bl #%X", 8 + 4 * SIGNEX32_BITS(c, 0, 24));
+            }
+            else //B
+            {
+                sprintf(str, "b #%X", 8 + 4 * SIGNEX32_BITS(c, 0, 24));
+            }
         }
         break;
     }
@@ -765,7 +786,6 @@ void Disassemble_arm(u32 code, u8 str[STRING_LENGTH], ARMARCH av) {
         sprintf(str, "n/a");
     }
 }
-
 
 void SubstituteSubString(u8 dst[STRING_LENGTH], u32 index, const u8* sub, u32 size) {
     /* Insert sub string of length size (< STRING_LENGTH) at dst[index] */
@@ -803,22 +823,6 @@ void CheckSpecialRegister(u8 str[STRING_LENGTH]) {
         }
     }
 }
-
-//Nintendo DS CPU: ARM946E-S
-//Architecture: ARMv5TE
-//ARM version: 5
-//THUMB version: 2
-
-/*
-Instructions available in ARMv6 but not ARMv5TE:
-
-ARM: BXJ, CPS, CPY, MCRR2, MRRC2, PKH, QADD16, QADD8, QADDSUBX, QSUB16, QSUB8, QSUBADDX, REV, RFE, SADD, SEL, SETEND, SHADD, SHSUB, SMLAD,
-SMLALD, SMLSD, SMLSLD, SMMLA, SMMLS, SMMUL, SMUAD, SMUSD, SRS, SSAT, SSUB, STREX, SXT, UADD, UHADD, UQADD, UQSUB, USAD, USAT, USUB, UXT,
-
-THUMB: CPS, CPY, REV, SETEND, SXTB, SXTH, UXTB, UXTH
-
-*/
-
 
 void Debug_DisassembleArm(u32 c) {
     /* Debug: disassemble a single ARM instruction from the ARMv5TE architecture */
@@ -960,61 +964,61 @@ int IfValidRangeSet(FILERANGE* range, u8* r) {
 int main(int argc, char* argv[]) {
 
     //Debug_DumpAllInstructions();
-    //Debug_DisassembleArm(0x38090410);
+    //Debug_DisassembleArm(0xfa123456);
 
+    
+        u8* filename_in = argv[1];
+        u8* filename_out = NULL;
+        FILE* file_in = NULL;
+        FILE* file_out = NULL;
+        FILERANGE filerange = { 0 };
 
-    u8* filename_in = argv[1];
-    u8* filename_out = NULL;
-    FILE* file_in = NULL;
-    FILE* file_out = NULL;
-    FILERANGE filerange = { 0 };
-
-    if (IsValidPath(filename_in)) //file in
-    {
-        file_in = fopen(filename_in, "rb");
-        if (file_in == NULL)
+        if (IsValidPath(filename_in)) //file in
         {
-            printf("ERROR: The file \"%s\" doesn't exist. Aborting.\n", filename_in);
+            file_in = fopen(filename_in, "rb");
+            if (file_in == NULL)
+            {
+                printf("ERROR: The file \"%s\" doesn't exist. Aborting.\n", filename_in);
+                return 0;
+            }
+
+            if (IsValidPath(argv[2])) //file out
+            {
+                filename_out = argv[2];
+                file_out = fopen(filename_out, "w+");
+                if (file_out == NULL) return 0; //couldn't create file for some reason
+
+                IfValidRangeSet(&filerange, argv[3]);
+                printf("Starting disassembly of \"%s\".\n", filename_in);
+                if (DisassembleFile(file_in, file_out, &filerange))
+                {
+                    printf("Successfully disassembled \"%s\" to \"%s\".\n", filename_in, filename_out);
+                }
+                else
+                {
+                    printf("ERROR: DisassembleFile failed.\n");
+                }
+                fclose(file_in);
+                fclose(file_out);
+            }
+            else //stdout
+            {
+                IfValidRangeSet(&filerange, argv[2]);
+                printf("Starting disassembly of \"%s\".\n", filename_in);
+                if (DisassembleFile(file_in, stdout, &filerange))
+                {
+                    printf("Successfully disassembled \"%s\".\n", filename_in);
+                }
+                else
+                {
+                    printf("ERROR: DisassembleFile failed.\n");
+                }
+                fclose(file_in);
+            }
             return 0;
         }
 
-        if (IsValidPath(argv[2])) //file out
-        {
-            filename_out = argv[2];
-            file_out = fopen(filename_out, "w+");
-            if (file_out == NULL) return 0; //couldn't create file for some reason
-
-            IfValidRangeSet(&filerange, argv[3]);
-            printf("Starting disassembly of \"%s\".\n", filename_in);
-            if (DisassembleFile(file_in, file_out, &filerange))
-            {
-                printf("Successfully disassembled \"%s\" to \"%s\".\n", filename_in, filename_out);
-            }
-            else
-            {
-                printf("ERROR: DisassembleFile failed.\n");
-            }
-            fclose(file_in);
-            fclose(file_out);
-        }
-        else //stdout
-        {
-            IfValidRangeSet(&filerange, argv[2]);
-            printf("Starting disassembly of \"%s\".\n", filename_in);
-            if (DisassembleFile(file_in, stdout, &filerange))
-            {
-                printf("Successfully disassembled \"%s\".\n", filename_in);
-            }
-            else
-            {
-                printf("ERROR: DisassembleFile failed.\n");
-            }
-            fclose(file_in);
-        }
-        return 0;
-    }
-
-    printf("Nothing was done\n");
-
+        printf("Nothing was done\n");
+    
     return 0;
 }
