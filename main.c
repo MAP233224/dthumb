@@ -69,7 +69,7 @@ typedef enum {
 
 /* GLOBALS */
 
-const u8 ConditionFlags[CONDITIONS_MAX][3] = { "eq", "ne", "cs", "cc", "mi", "pl", "vs", "vc", "hi", "ls", "ge", "lt", "gt", "le", "al", "" }; //last is "nv"
+const u8 ConditionFlags[CONDITIONS_MAX][3] = { "eq", "ne", "cs", "cc", "mi", "pl", "vs", "vc", "hi", "ls", "ge", "lt", "gt", "le", "", "" }; //last two are "al" and "nv", but never displayed
 
 const u8 IT_xyz_0[CONDITIONS_MAX][4] = { //if then block suffixes
     "", //doesn't exist
@@ -188,10 +188,9 @@ static u32 FormatStringRegisterList_thumb(u8 str[STRING_LENGTH], u16 reg, const 
 static u32 FormatStringRegisterList_arm(u8 str[STRING_LENGTH], u16 reg) {
     /**/
     //todo for later: maybe group consecutive registers together with a -
-    //todo: finish
     u32 bits = 0;
     u32 pos = 0; //position in the str array
-    for (u32 i = 0; i < 16; i++) //9 instead of 16 because of clever grouping
+    for (u32 i = 0; i < 16; i++) //all registers
     {
         if (BITS(reg, i, 1))
         {
@@ -730,12 +729,12 @@ static void Disassemble_arm(u32 code, u8 str[STRING_LENGTH], ARMARCH av) {
     case 1: //todo
     {
         if (cond == NV) break; //undefined
+        u32 imm = ROR(BITS(c, 0, 8), 2 * BITS(c, 8, 4));
         if (BITS(c, 20, 1)) //Data processing immediate, updates condition codes
         {
             u8 op = BITS(c, 21, 4);
             u8 rd = BITS(c, 12, 4);
             u8 rn = BITS(c, 16, 4);
-            u32 imm = ROR(BITS(c, 0, 8), 2 * BITS(c, 8, 4));
             switch (op)
             {
             case 8: //TST
@@ -761,8 +760,15 @@ static void Disassemble_arm(u32 code, u8 str[STRING_LENGTH], ARMARCH av) {
             }
             }
         }
-        //else
-        //Move immediate to status register
+        else //MSR immediate
+        {
+            //todo
+            //fields are c, x, s, f (format the sequence), bits 16 to 19
+            //bits 12 to 15 (SBO) do what?
+            //bit 22 decides SPSR (1) or CPSR (0)
+            //msr{<cond>} cpsr_<fields>, #<imm>
+            //msr{<cond>} spsr_<fields>, #<imm>
+        }
         break;
     }
     case 2: //todo
@@ -1026,59 +1032,59 @@ int main(int argc, char* argv[]) {
     //Debug_DumpAllInstructions();
     //Debug_DisassembleArm(0x13f0b0f5);
 
-    
-        u8* filename_in = argv[1];
-        u8* filename_out = NULL;
-        FILE* file_in = NULL;
-        FILE* file_out = NULL;
-        FILERANGE filerange = { 0 };
 
-        if (IsValidPath(filename_in)) //file in
+    u8* filename_in = argv[1];
+    u8* filename_out = NULL;
+    FILE* file_in = NULL;
+    FILE* file_out = NULL;
+    FILERANGE filerange = { 0 };
+
+    if (IsValidPath(filename_in)) //file in
+    {
+        file_in = fopen(filename_in, "rb");
+        if (file_in == NULL)
         {
-            file_in = fopen(filename_in, "rb");
-            if (file_in == NULL)
-            {
-                printf("ERROR: The file \"%s\" doesn't exist. Aborting.\n", filename_in);
-                return 0;
-            }
-
-            if (IsValidPath(argv[2])) //file out
-            {
-                filename_out = argv[2];
-                file_out = fopen(filename_out, "w+");
-                if (file_out == NULL) return 0; //couldn't create file for some reason
-
-                IfValidRangeSet(&filerange, argv[3]);
-                printf("Starting disassembly of \"%s\".\n", filename_in);
-                if (DisassembleFile(file_in, file_out, &filerange))
-                {
-                    printf("Successfully disassembled \"%s\" to \"%s\".\n", filename_in, filename_out);
-                }
-                else
-                {
-                    printf("ERROR: DisassembleFile failed.\n");
-                }
-                fclose(file_in);
-                fclose(file_out);
-            }
-            else //stdout
-            {
-                IfValidRangeSet(&filerange, argv[2]);
-                printf("Starting disassembly of \"%s\".\n", filename_in);
-                if (DisassembleFile(file_in, stdout, &filerange))
-                {
-                    printf("Successfully disassembled \"%s\".\n", filename_in);
-                }
-                else
-                {
-                    printf("ERROR: DisassembleFile failed.\n");
-                }
-                fclose(file_in);
-            }
+            printf("ERROR: The file \"%s\" doesn't exist. Aborting.\n", filename_in);
             return 0;
         }
 
-        printf("Nothing was done\n");
-    
+        if (IsValidPath(argv[2])) //file out
+        {
+            filename_out = argv[2];
+            file_out = fopen(filename_out, "w+");
+            if (file_out == NULL) return 0; //couldn't create file for some reason
+
+            IfValidRangeSet(&filerange, argv[3]);
+            printf("Starting disassembly of \"%s\".\n", filename_in);
+            if (DisassembleFile(file_in, file_out, &filerange))
+            {
+                printf("Successfully disassembled \"%s\" to \"%s\".\n", filename_in, filename_out);
+            }
+            else
+            {
+                printf("ERROR: DisassembleFile failed.\n");
+            }
+            fclose(file_in);
+            fclose(file_out);
+        }
+        else //stdout
+        {
+            IfValidRangeSet(&filerange, argv[2]);
+            printf("Starting disassembly of \"%s\".\n", filename_in);
+            if (DisassembleFile(file_in, stdout, &filerange))
+            {
+                printf("Successfully disassembled \"%s\".\n", filename_in);
+            }
+            else
+            {
+                printf("ERROR: DisassembleFile failed.\n");
+            }
+            fclose(file_in);
+        }
+        return 0;
+    }
+
+    printf("Nothing was done\n");
+
     return 0;
 }
