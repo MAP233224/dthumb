@@ -12,16 +12,15 @@ SMLALD, SMLSD, SMLSLD, SMMLA, SMMLS, SMMUL, SMUAD, SMUSD, SRS, SSAT, SSUB, STREX
 THUMB: CPS, CPY, REV, SETEND, SXTB, SXTH, UXTB, UXTH
 */
 
+/* INCLUDES */
+
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
 
+/* MACROS */
+
 //#define _CRT_SECURE_NO_WARNINGS 1
-
-typedef unsigned int u32;
-typedef unsigned short u16;
-typedef unsigned char u8;
-
 #define PATH_LENGTH (256)
 #define RANGE_LENGTH (18)
 #define STRING_LENGTH (64)
@@ -32,6 +31,11 @@ typedef unsigned char u8;
 #define SIGNEX32_VAL(x, n) ((x ^ (1<<(n-1))) - (1<<(n-1))) //convert n-bit value to signed 32 bits
 #define ROR(x, n) ((x>>n)|(n<<(32-n))) //rotate right 32-bit value x by n bits
 
+/* TYPEDEFS */
+
+typedef unsigned int u32;
+typedef unsigned short u16;
+typedef unsigned char u8;
 
 typedef struct {
     int start; //starting address
@@ -62,6 +66,8 @@ typedef enum {
     AL, //unconditional, only with IT instructions
     NV  //unconditional, usually undefined
 }CONDITION;
+
+/* GLOBALS */
 
 const u8 ConditionFlags[CONDITIONS_MAX][3] = { "eq", "ne", "cs", "cc", "mi", "pl", "vs", "vc", "hi", "ls", "ge", "lt", "gt", "le", "al", "" }; //last is "nv"
 
@@ -158,7 +164,7 @@ u32 debug_na_count = 0;
 
 /* FUNCTIONS */
 
-u32 FormatStringRegisterList_thumb(u8 str[STRING_LENGTH], u16 reg, const u8 pclr[3]) {
+static u32 FormatStringRegisterList_thumb(u8 str[STRING_LENGTH], u16 reg, const u8 pclr[3]) {
     /**/
     //todo for later: maybe group consecutive registers together with a -
     u32 bits = 0;
@@ -179,7 +185,7 @@ u32 FormatStringRegisterList_thumb(u8 str[STRING_LENGTH], u16 reg, const u8 pclr
     return bits; //number of 1 bits
 }
 
-u32 FormatStringRegisterList_arm(u8 str[STRING_LENGTH], u16 reg) {
+static u32 FormatStringRegisterList_arm(u8 str[STRING_LENGTH], u16 reg) {
     /**/
     //todo for later: maybe group consecutive registers together with a -
     //todo: finish
@@ -200,37 +206,37 @@ u32 FormatStringRegisterList_arm(u8 str[STRING_LENGTH], u16 reg) {
     return bits; //number of 1 bits
 }
 
-u32 CountBits(u8 b) {
+static u32 CountBits(u8 b) {
     /* Count bits in a byte */
     static const u8 lut[16] = { 0,1,1,2,1,2,2,3,1,2,2,3,2,3,3,4 };
     return lut[b & 0x0f] + lut[b >> 4];
 }
 
-void IfThen_imm_2(const u8* op, u8 str[STRING_LENGTH], u32 it, const u8* cond, u8 rm, u8 imm) {
+static void IfThen_imm_2(const u8* op, u8 str[STRING_LENGTH], u32 it, const u8* cond, u8 rm, u8 imm) {
     /* Formatting */
     if (it) sprintf(str, "%s%s r%u, #%X", op, cond, rm, imm);
     else sprintf(str, "%ss r%u, #%X", op, rm, imm);
 }
 
-void IfThen_imm_3(const u8* op, u8 str[STRING_LENGTH], u32 it, const u8* cond, u8 rd, u8 rm, u8 imm) {
+static void IfThen_imm_3(const u8* op, u8 str[STRING_LENGTH], u32 it, const u8* cond, u8 rd, u8 rm, u8 imm) {
     /* Formatting */
     if (it) sprintf(str, "%s%s r%u, r%u, #%X", op, cond, rd, rm, imm);
     else sprintf(str, "%ss r%u, r%u, #%X", op, rd, rm, imm);
 }
 
-void IfThen_reg_2(const u8* op, u8 str[STRING_LENGTH], u32 it, const u8* cond, u8 rd, u8 rm) {
+static void IfThen_reg_2(const u8* op, u8 str[STRING_LENGTH], u32 it, const u8* cond, u8 rd, u8 rm) {
     /* Formatting */
     if (it) sprintf(str, "%s%s r%u, r%u", op, cond, rd, rm);
     else sprintf(str, "%ss r%u, r%u", op, rd, rm);
 }
 
-void IfThen_reg_3(const u8* op, u8 str[STRING_LENGTH], u32 it, const u8* cond, u8 rd, u8 rm, u8 rn) {
+static void IfThen_reg_3(const u8* op, u8 str[STRING_LENGTH], u32 it, const u8* cond, u8 rd, u8 rm, u8 rn) {
     /* Formatting */
     if (it) sprintf(str, "%s%s r%u, r%u, r%u", op, cond, rd, rm, rn);
     else sprintf(str, "%ss r%u, r%u, r%u", op, rd, rm, rn);
 }
 
-u32 Disassemble_thumb(u32 code, u8 str[STRING_LENGTH], u32 it, const u8* cond, ARMARCH tv) {
+static u32 Disassemble_thumb(u32 code, u8 str[STRING_LENGTH], u32 it, const u8* cond, ARMARCH tv) {
     /* Convert a code into a string, return 0 if processed THUMB 16-bit, 1 if processed THUMB 32-bit  */
 
     u32 thumb_size = 0; //return value
@@ -699,7 +705,7 @@ u32 Disassemble_thumb(u32 code, u8 str[STRING_LENGTH], u32 it, const u8* cond, A
     return thumb_size;
 }
 
-void Disassemble_arm(u32 code, u8 str[STRING_LENGTH], ARMARCH av) {
+static void Disassemble_arm(u32 code, u8 str[STRING_LENGTH], ARMARCH av) {
     /**/
     //only supports ARMv5
 
@@ -839,7 +845,7 @@ void Disassemble_arm(u32 code, u8 str[STRING_LENGTH], ARMARCH av) {
     }
 }
 
-void SubstituteSubString(u8 dst[STRING_LENGTH], u32 index, const u8* sub, u32 size) {
+static void SubstituteSubString(u8 dst[STRING_LENGTH], u32 index, const u8* sub, u32 size) {
     /* Insert sub string of length size (< STRING_LENGTH) at dst[index] */
     u8 tmp[STRING_LENGTH] = { 0 }; //zinit
     memcpy(&tmp, sub, size); //init
@@ -847,7 +853,7 @@ void SubstituteSubString(u8 dst[STRING_LENGTH], u32 index, const u8* sub, u32 si
     memcpy(&dst[index], tmp, STRING_LENGTH - index - 1); //restore
 }
 
-void CheckSpecialRegister(u8 str[STRING_LENGTH]) {
+static void CheckSpecialRegister(u8 str[STRING_LENGTH]) {
     /* Replace special registers by their common names */
     //(r12->ip), r13->sp, r14->lr, r15->pc
     for (u32 i = 0; i < STRING_LENGTH; i++)
@@ -876,14 +882,14 @@ void CheckSpecialRegister(u8 str[STRING_LENGTH]) {
     }
 }
 
-void Debug_DisassembleArm(u32 c) {
+static void Debug_DisassembleArm(u32 c) {
     /* Debug: disassemble a single ARM instruction from the ARMv5TE architecture */
     u8 s[STRING_LENGTH] = { 0 };
     Disassemble_arm(c, s, ARMv5TE);
     printf("%08X -> %s\n", c, s);
 }
 
-void Debug_DumpAllInstructions(void) {
+static void Debug_DumpAllInstructions(void) {
     /* Debug: call only when you want to dump the complete THUMB instruction set to a file */
 
     FILE* fp = fopen("ARMv5TE_THUMB_instruction_set.txt", "w+");
@@ -901,7 +907,7 @@ void Debug_DumpAllInstructions(void) {
     printf("N/A instructions remaining: %u (%u%% done)\n", debug_na_count, 100 - 100 * debug_na_count / 65536);
 }
 
-int GetFileSize_mine(FILE* fp) {
+static int GetFileSize_mine(FILE* fp) {
     /* Return the size of an opened file */
     fseek(fp, 0, SEEK_END);
     int size = ftell(fp);
@@ -909,7 +915,7 @@ int GetFileSize_mine(FILE* fp) {
     return size;
 }
 
-int DisassembleFile(FILE* in, FILE* out, FILERANGE* range) {
+static int DisassembleFile(FILE* in, FILE* out, FILERANGE* range) {
     /* Disassemble from a binary file, print to another file */
     int size = GetFileSize_mine(in);
     if (range->start > size || range->end > size) return 0;
@@ -944,7 +950,7 @@ int DisassembleFile(FILE* in, FILE* out, FILERANGE* range) {
     return 1; //success
 }
 
-int IsValidPath(u8* path) {
+static int IsValidPath(u8* path) {
     /* Check if length of path/filename is */
     //todo: check if you can also open it
     //todo: check for "." in the name, need file extension
@@ -963,7 +969,7 @@ int IsValidPath(u8* path) {
     return 0;
 }
 
-int IfValidRangeSet(FILERANGE* range, u8* r) {
+static int IfValidRangeSet(FILERANGE* range, u8* r) {
     /* Check to see if the range string yields a valid FILERANGE */
     //Acceptable formats:
     //"%x-%x" //start to end
@@ -1012,6 +1018,8 @@ int IfValidRangeSet(FILERANGE* range, u8* r) {
     range->end = end;
     return 1;
 }
+
+/* ENTRY POINT */
 
 int main(int argc, char* argv[]) {
 
