@@ -26,9 +26,12 @@ typedef unsigned char u8;
 #define RANGE_LENGTH (18)
 #define STRING_LENGTH (64)
 #define CONDITIONS_MAX (16)
+
 #define BITS(x, b, n) ((x >> b) & ((1 << n) - 1)) //retrieves n bits from x starting at bit b
 #define SIGNEX32_BITS(x, b, n) ((BITS(x,b,n) ^ (1<<(n-1))) - (1<<(n-1))) //convert n-bit value to signed 32 bits
 #define SIGNEX32_VAL(x, n) ((x ^ (1<<(n-1))) - (1<<(n-1))) //convert n-bit value to signed 32 bits
+#define ROR(x, n) ((x>>n)|(n<<(32-n))) //rotate right 32-bit value x by n bits
+
 
 typedef struct {
     int start; //starting address
@@ -107,7 +110,7 @@ const u8 AddressingModes[4][3] = {
     "ib"  //Increment before
 };
 
-const u8 DataProcessingRegister[16][4] = {
+const u8 DataProcessing_thumb[16][4] = {
     "and",
     "eor",
     "lsl",
@@ -124,6 +127,25 @@ const u8 DataProcessingRegister[16][4] = {
     "mul",
     "bic",
     "mvn"
+};
+
+const u8 DataProcessing_arm[16][4] = {
+    "and",
+    "eor",
+    "sub",
+    "rsb",
+    "add",
+    "adc",
+    "sbc",
+    "rsc",
+    "tst", //no s
+    "teq", //no s
+    "cmp", //no s
+    "cmn", //no s
+    "orr",
+    "mov", //only 1 source operand
+    "bic",
+    "mvn"  //only 1 source operand
 };
 
 const u8 MovAddSubImmediate[4][4] = { "mov","cmp","add","sub" }; //cmp won't be used
@@ -376,12 +398,12 @@ u32 Disassemble_thumb(u32 code, u8 str[STRING_LENGTH], u32 it, const u8* cond, A
             case 10:
             case 11:
             {
-                sprintf(str, "%s r%u, r%u", DataProcessingRegister[index], BITS(c, 0, 3), BITS(c, 3, 3));
+                sprintf(str, "%s r%u, r%u", DataProcessing_thumb[index], BITS(c, 0, 3), BITS(c, 3, 3));
                 break;
             }
             default:
             {
-                IfThen_reg_2(DataProcessingRegister[index], str, it, cond, BITS(c, 0, 3), BITS(c, 3, 3));
+                IfThen_reg_2(DataProcessing_thumb[index], str, it, cond, BITS(c, 0, 3), BITS(c, 3, 3));
             }
             }
         }
@@ -702,8 +724,38 @@ void Disassemble_arm(u32 code, u8 str[STRING_LENGTH], ARMARCH av) {
     case 1: //todo
     {
         if (cond == NV) break; //undefined
+        if (BITS(c, 20, 1)) //Data processing immediate, updates condition codes
+        {
+            u8 op = BITS(c, 21, 4);
+            u8 rd = BITS(c, 12, 4);
+            u8 rn = BITS(c, 16, 4);
+            u32 imm = ROR(BITS(c, 0, 8), 2 * BITS(c, 8, 4));
+            switch (op)
+            {
+            case 8: //TST
+            case 9: //TEQ
+            case 10: //CMP
+            case 11: //CMN
+                //always update the condition codes: <op>{<cond>} <Rn>, <shift>
+            {
+                sprintf(str, "%s%s r%u, #%X", DataProcessing_arm[op], ConditionFlags[cond], rn, imm);
+                break;
+            }
+            case 13: //MOV
+            case 15: //MVN
+                //only one source operand: <op>{<cond>}{S} <Rd>, <shift>
+            {
+                sprintf(str, "%ss%s r%u, #%X", DataProcessing_arm[op], ConditionFlags[cond], rd, imm);
+                break;
+            }
+
+            default: //others: <op>{<cond>}{S} <Rd>, <Rn>, <shift>
+            {
+                sprintf(str, "%ss%s r%u, r%u, #%X", DataProcessing_arm[op], ConditionFlags[cond], rd, rn, imm);
+            }
+            }
+        }
         //else
-        //Data processing immediate
         //Move immediate to status register
         break;
     }
@@ -964,7 +1016,7 @@ int IfValidRangeSet(FILERANGE* range, u8* r) {
 int main(int argc, char* argv[]) {
 
     //Debug_DumpAllInstructions();
-    //Debug_DisassembleArm(0xfa123456);
+    //Debug_DisassembleArm(0x13f0b0f5);
 
     
         u8* filename_in = argv[1];
