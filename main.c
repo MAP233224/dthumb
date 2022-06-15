@@ -738,11 +738,57 @@ static void Disassemble_arm(u32 code, u8 str[STRING_LENGTH], ARMARCH av) {
     case 0: //todo
     {
         if (cond == NV) break; //undefined
-        //else
-        //Data processing immediate shift
-        //Miscellanous instructions, see fig 3-3
-        //Data processing register shift
-        //Multiplies, extra load/stores: see fig 3-2
+        if (BITS(c, 4, 1))
+        {
+            if (BITS(c, 7, 1))
+            {
+                //Multiplies, extra load/stores: see fig 3-2
+            }
+            else
+            {
+                if (BITS(c, 23, 2) == 2 && !BITS(c, 20, 1)) //Miscellanous instructions, see fig 3-3
+                {
+
+                }
+                else //Data processing register shift
+                {
+                    u8 rm = BITS(c, 0, 4);
+                    u8 shift = BITS(c, 5, 2);
+                    u8 rs = BITS(c, 8, 4);
+                    u8 rd = BITS(c, 12, 4);
+                    u8 rn = BITS(c, 16, 4);
+                    u8 op = BITS(c, 21, 4);
+                    u8 sstr[STRING_LENGTH] = { 0 }; //todo: format shifter
+
+                    switch (op)
+                    {
+                    case 8: //TST
+                    case 9: //TEQ
+                    case 10: //CMP
+                    case 11: //CMN
+                    {
+                        sprintf(str, "%s%s r%u, %s", DataProcessing_arm[op], ConditionFlags[cond], rn, sstr);
+                        break;
+                    }
+                    case 13: //MOV
+                    case 15: //MVN
+                    {
+                        sprintf(str, "%ss%s r%u, %s", DataProcessing_arm[op], ConditionFlags[cond], rd, sstr);
+                        break;
+                    }
+                    default:
+                    {
+                        sprintf(str, "%ss%s r%u, r%u, %s", DataProcessing_arm[op], ConditionFlags[cond], rd, rn, sstr);
+                    }
+                    }
+                }
+            }
+        }
+        else
+        {
+            //Data processing immediate shift
+            //Miscellanous instructions, see fig 3-3
+        }
         break;
     }
     case 1: //Data processing and MSR immediate
@@ -784,7 +830,7 @@ static void Disassemble_arm(u32 code, u8 str[STRING_LENGTH], ARMARCH av) {
             if (BITS(c, 12, 4) == 15) //Should-Be-One (SBO)
             {
                 u8 cs = BITS(c, 22, 1) ? 's' : 'c'; //SPSR (1) or CPSR (0)
-                sprintf(str, "msr%s %cpsr_%s, #%X", ConditionFlags[cond], cs, MSR_cxsf[BITS(c,16,4)], imm);
+                sprintf(str, "msr%s %cpsr_%s, #%X", ConditionFlags[cond], cs, MSR_cxsf[BITS(c, 16, 4)], imm);
             }
         }
         break;
@@ -1045,12 +1091,15 @@ static int IfValidRangeSet(FILERANGE* range, u8* r) {
 
 /* ENTRY POINT */
 
+#define DEBUG //comment out to disable debug ifdefs
+
 int main(int argc, char* argv[]) {
 
+#ifdef DEBUG
     //Debug_DumpAllInstructions();
-    //Debug_DisassembleArm(0xD365F123);
+    Debug_DisassembleArm(0xD365F123);
+#else
 
-    
     u8* filename_in = argv[1];
     u8* filename_out = NULL;
     FILE* file_in = NULL;
@@ -1103,6 +1152,7 @@ int main(int argc, char* argv[]) {
     }
 
     printf("Nothing was done\n");
-    
+#endif // DEBUG
+
     return 0;
 }
