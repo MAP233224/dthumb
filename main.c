@@ -29,7 +29,7 @@ THUMB: CPS, CPY, REV, SETEND, SXTB, SXTH, UXTB, UXTH
 #define BITS(x, b, n) ((x >> b) & ((1 << n) - 1)) //retrieves n bits from x starting at bit b
 #define SIGNEX32_BITS(x, b, n) ((BITS(x,b,n) ^ (1<<(n-1))) - (1<<(n-1))) //convert n-bit value to signed 32 bits
 #define SIGNEX32_VAL(x, n) ((x ^ (1<<(n-1))) - (1<<(n-1))) //convert n-bit value to signed 32 bits
-#define ROR(x, n) ((x>>n)|(n<<(32-n))) //rotate right 32-bit value x by n bits
+#define ROR(x, n) ((x>>n)|(x<<(32-n))) //rotate right 32-bit value x by n bits
 
 /* TYPEDEFS */
 
@@ -152,6 +152,25 @@ const u8 DataProcessing_arm[16][4] = {
     "mov", //only 1 source operand
     "bic",
     "mvn"  //only 1 source operand
+};
+
+const u8 MSR_cxsf[16][5] = {
+    "",
+    "c",
+    "x",
+    "xc",
+    "s",
+    "sc",
+    "sx",
+    "sxc",
+    "f",
+    "fc",
+    "fx",
+    "fxc",
+    "fs",
+    "fsc",
+    "fsx",
+    "fsxc"
 };
 
 const u8 MovAddSubImmediate[4][4] = { "mov","cmp","add","sub" }; //cmp won't be used
@@ -726,7 +745,7 @@ static void Disassemble_arm(u32 code, u8 str[STRING_LENGTH], ARMARCH av) {
         //Multiplies, extra load/stores: see fig 3-2
         break;
     }
-    case 1: //todo
+    case 1: //Data processing and MSR immediate
     {
         if (cond == NV) break; //undefined
         u32 imm = ROR(BITS(c, 0, 8), 2 * BITS(c, 8, 4));
@@ -762,12 +781,11 @@ static void Disassemble_arm(u32 code, u8 str[STRING_LENGTH], ARMARCH av) {
         }
         else //MSR immediate
         {
-            //todo
-            //fields are c, x, s, f (format the sequence), bits 16 to 19
-            //bits 12 to 15 (SBO) do what?
-            //bit 22 decides SPSR (1) or CPSR (0)
-            //msr{<cond>} cpsr_<fields>, #<imm>
-            //msr{<cond>} spsr_<fields>, #<imm>
+            if (BITS(c, 12, 4) == 15) //Should-Be-One (SBO)
+            {
+                u8 cs = BITS(c, 22, 1) ? 's' : 'c'; //SPSR (1) or CPSR (0)
+                sprintf(str, "msr%s %cpsr_%s, #%X", ConditionFlags[cond], cs, MSR_cxsf[BITS(c,16,4)], imm);
+            }
         }
         break;
     }
@@ -1030,9 +1048,9 @@ static int IfValidRangeSet(FILERANGE* range, u8* r) {
 int main(int argc, char* argv[]) {
 
     //Debug_DumpAllInstructions();
-    //Debug_DisassembleArm(0x13f0b0f5);
+    //Debug_DisassembleArm(0xD365F123);
 
-
+    
     u8* filename_in = argv[1];
     u8* filename_out = NULL;
     FILE* file_in = NULL;
@@ -1085,6 +1103,6 @@ int main(int argc, char* argv[]) {
     }
 
     printf("Nothing was done\n");
-
+    
     return 0;
 }
