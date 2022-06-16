@@ -69,7 +69,7 @@ typedef enum {
 
 /* GLOBALS */
 
-const u8 ConditionFlags[CONDITIONS_MAX][3] = { "eq", "ne", "cs", "cc", "mi", "pl", "vs", "vc", "hi", "ls", "ge", "lt", "gt", "le", "", "" }; //last two are "al" and "nv", but never displayed
+const u8 Conditions[CONDITIONS_MAX][3] = { "eq", "ne", "cs", "cc", "mi", "pl", "vs", "vc", "hi", "ls", "ge", "lt", "gt", "le", "", "" }; //last two are "al" and "nv", but never displayed
 
 const u8 IT_xyz_0[CONDITIONS_MAX][4] = { //if then block suffixes
     "", //doesn't exist
@@ -597,8 +597,8 @@ static u32 Disassemble_thumb(u32 code, u8 str[STRING_LENGTH], u32 it, const u8* 
                     else if (firstcond == 14 && CountBits(mask) != 1); //n/a
                     else
                     {
-                        if (firstcond & 1) sprintf(str, "it%s %s", IT_xyz_1[mask], ConditionFlags[firstcond]);
-                        else sprintf(str, "it%s %s", IT_xyz_0[mask], ConditionFlags[firstcond]);
+                        if (firstcond & 1) sprintf(str, "it%s %s", IT_xyz_1[mask], Conditions[firstcond]);
+                        else sprintf(str, "it%s %s", IT_xyz_0[mask], Conditions[firstcond]);
                     }
                 }
                 else //NOP-compatible hints
@@ -644,7 +644,7 @@ static u32 Disassemble_thumb(u32 code, u8 str[STRING_LENGTH], u32 it, const u8* 
             }
             default: //B conditional
             {
-                sprintf(str, "b%s #%X", ConditionFlags[BITS(c, 8, 4)], 4 + 2 * SIGNEX32_BITS(c, 0, 8));
+                sprintf(str, "b%s #%X", Conditions[BITS(c, 8, 4)], 4 + 2 * SIGNEX32_BITS(c, 0, 8));
             }
             }
         }
@@ -767,18 +767,18 @@ static void Disassemble_arm(u32 code, u8 str[STRING_LENGTH], ARMARCH av) {
                     case 10: //CMP
                     case 11: //CMN
                     {
-                        sprintf(str, "%s%s r%u, %s", DataProcessing_arm[op], ConditionFlags[cond], rn, sstr);
+                        sprintf(str, "%s%s r%u, %s", DataProcessing_arm[op], Conditions[cond], rn, sstr);
                         break;
                     }
                     case 13: //MOV
                     case 15: //MVN
                     {
-                        sprintf(str, "%ss%s r%u, %s", DataProcessing_arm[op], ConditionFlags[cond], rd, sstr);
+                        sprintf(str, "%ss%s r%u, %s", DataProcessing_arm[op], Conditions[cond], rd, sstr);
                         break;
                     }
                     default:
                     {
-                        sprintf(str, "%ss%s r%u, r%u, %s", DataProcessing_arm[op], ConditionFlags[cond], rd, rn, sstr);
+                        sprintf(str, "%ss%s r%u, r%u, %s", DataProcessing_arm[op], Conditions[cond], rd, rn, sstr);
                     }
                     }
                 }
@@ -808,20 +808,20 @@ static void Disassemble_arm(u32 code, u8 str[STRING_LENGTH], ARMARCH av) {
             case 11: //CMN
                 //always update the condition codes: <op>{<cond>} <Rn>, <shift>
             {
-                sprintf(str, "%s%s r%u, #%X", DataProcessing_arm[op], ConditionFlags[cond], rn, imm);
+                sprintf(str, "%s%s r%u, #%X", DataProcessing_arm[op], Conditions[cond], rn, imm);
                 break;
             }
             case 13: //MOV
             case 15: //MVN
                 //only one source operand: <op>{<cond>}{S} <Rd>, <shift>
             {
-                sprintf(str, "%ss%s r%u, #%X", DataProcessing_arm[op], ConditionFlags[cond], rd, imm);
+                sprintf(str, "%ss%s r%u, #%X", DataProcessing_arm[op], Conditions[cond], rd, imm);
                 break;
             }
 
             default: //others: <op>{<cond>}{S} <Rd>, <Rn>, <shift>
             {
-                sprintf(str, "%ss%s r%u, r%u, #%X", DataProcessing_arm[op], ConditionFlags[cond], rd, rn, imm);
+                sprintf(str, "%ss%s r%u, r%u, #%X", DataProcessing_arm[op], Conditions[cond], rd, rn, imm);
             }
             }
         }
@@ -830,16 +830,31 @@ static void Disassemble_arm(u32 code, u8 str[STRING_LENGTH], ARMARCH av) {
             if (BITS(c, 12, 4) == 15) //Should-Be-One (SBO)
             {
                 u8 cs = BITS(c, 22, 1) ? 's' : 'c'; //SPSR (1) or CPSR (0)
-                sprintf(str, "msr%s %cpsr_%s, #%X", ConditionFlags[cond], cs, MSR_cxsf[BITS(c, 16, 4)], imm);
+                sprintf(str, "msr%s %cpsr_%s, #%X", Conditions[cond], cs, MSR_cxsf[BITS(c, 16, 4)], imm);
             }
         }
         break;
     }
-    case 2: //todo
+    case 2: //Load/store immediate offset
     {
         if (cond == NV) break; //undefined
-        //else
-        //Load/store immediate offset
+        //bits 25, 24, 23 and 21 decide the addressing mode
+        u8 rd = BITS(c, 12, 4);
+        u8 rn = BITS(c, 16, 4);
+        u16 imm = BITS(c, 0, 12); //12 bits for LDR and LDRB (8 bits for LDRH and LDRSB)
+        u8* sign = BITS(c, 23, 1) ? "+" : "-"; //sign of the immediate offset
+        u8* ls = BITS(c, 20, 1) ? "ldr" : "str"; //load or store
+        u8* b = BITS(c, 22, 1) ? "b" : ""; //byte or word
+        if (BITS(c, 24, 1)) //offset or pre-indexed
+        {
+            u8* w = BITS(c, 21, 1) ? "!" : ""; //pre-indexed if 1
+            sprintf(str, "%s%s%s r%u, [r%u, #%s%X]%s", ls, b, Conditions[cond], rd, rn, sign, imm, w);
+        }
+        else //post-indexed
+        {
+            u8* w = BITS(c, 21, 1) ?  "t" : ""; //user mode
+            sprintf(str, "%s%s%s%s r%u, [r%u], #%s%X", ls, b, w, Conditions[cond], rd, rn, sign, imm);
+        }
         break;
     }
     case 3: //todo
@@ -860,11 +875,11 @@ static void Disassemble_arm(u32 code, u8 str[STRING_LENGTH], ARMARCH av) {
         u8 am = BITS(c, 23, 2); //PU bits
         if (BITS(c, 20, 1)) //LDM
         {
-            sprintf(str, "ldm%s%s r%u%s, {%s}%s", ConditionFlags[cond], AddressingModes[am], rn, w, reglist, s);
+            sprintf(str, "ldm%s%s r%u%s, {%s}%s", Conditions[cond], AddressingModes[am], rn, w, reglist, s);
         }
         else //STM
         {
-            sprintf(str, "stm%s%s r%u%s, {%s}%s", ConditionFlags[cond], AddressingModes[am], rn, w, reglist, s);
+            sprintf(str, "stm%s%s r%u%s, {%s}%s", Conditions[cond], AddressingModes[am], rn, w, reglist, s);
         }
         break;
     }
@@ -899,7 +914,7 @@ static void Disassemble_arm(u32 code, u8 str[STRING_LENGTH], ARMARCH av) {
         //if (cond == NV) break; //only unpredictable prior to ARMv5
         if (BITS(c, 24, 1)) //SWI
         {
-            sprintf(str, "swi%s #%X", ConditionFlags[cond], BITS(c, 0, 24));
+            sprintf(str, "swi%s #%X", Conditions[cond], BITS(c, 0, 24));
         }
         //else
         //Coprocessor data processing
@@ -952,7 +967,7 @@ static void CheckSpecialRegister(u8 str[STRING_LENGTH]) {
     }
 }
 
-static void Debug_DisassembleArm(u32 c) {
+static void Debug_DisassembleCode_arm(u32 c) {
     /* Debug: disassemble a single ARM instruction from the ARMv5TE architecture */
     u8 s[STRING_LENGTH] = { 0 };
     Disassemble_arm(c, s, ARMv5TE);
@@ -1097,7 +1112,7 @@ int main(int argc, char* argv[]) {
 
 #ifdef DEBUG
     //Debug_DumpAllInstructions();
-    Debug_DisassembleArm(0xD365F123);
+    Debug_DisassembleCode_arm(0xa5af0609);
 #else
 
     u8* filename_in = argv[1];
@@ -1141,7 +1156,7 @@ int main(int argc, char* argv[]) {
             if (DisassembleFile(file_in, stdout, &filerange))
             {
                 printf("Successfully disassembled \"%s\".\n", filename_in);
-            }
+}
             else
             {
                 printf("ERROR: DisassembleFile failed.\n");
