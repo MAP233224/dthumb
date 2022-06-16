@@ -971,7 +971,7 @@ static void Debug_DisassembleCode_arm(u32 c) {
     /* Debug: disassemble a single ARM instruction from the ARMv5TE architecture */
     u8 s[STRING_LENGTH] = { 0 };
     Disassemble_arm(c, s, ARMv5TE);
-    printf("%08X -> %s\n", c, s);
+    //printf("%08X -> %s\n", c, s);
 }
 
 static void Debug_DumpAllInstructions(void) {
@@ -1112,7 +1112,15 @@ int main(int argc, char* argv[]) {
 
 #ifdef DEBUG
     //Debug_DumpAllInstructions();
-    Debug_DisassembleCode_arm(0xa5af0609);
+    //Debug_DisassembleCode_arm(0xa5af0609);
+    u32 i=0;
+    while (++i)
+    {
+        Debug_DisassembleCode_arm(i);
+    }
+
+    printf("%u n/a instructions, %.2f complete.\n", debug_na_count, (float)debug_na_count / (float)0x100000000);
+
 #else
 
     u8* filename_in = argv[1];
