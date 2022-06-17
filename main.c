@@ -760,6 +760,7 @@ static void Disassemble_arm(u32 code, u8 str[STRING_LENGTH], ARMARCH av) {
                     u8 rd = BITS(c, 12, 4);
                     u8 rn = BITS(c, 16, 4);
                     u8 op = BITS(c, 21, 4);
+                    u8* s = BITS(c, 20, 1) ? "s" : "";
                     switch (op)
                     {
                     case 8: //TST
@@ -773,12 +774,12 @@ static void Disassemble_arm(u32 code, u8 str[STRING_LENGTH], ARMARCH av) {
                     case 13: //MOV
                     case 15: //MVN
                     {
-                        sprintf(str, "%ss%s r%u, r%u, %s r%u", DataProcessing_arm[op], Conditions[cond], rd, rm, Shifters[shift], rs);
+                        sprintf(str, "%s%s%s r%u, r%u, %s r%u", DataProcessing_arm[op], s, Conditions[cond], rd, rm, Shifters[shift], rs);
                         break;
                     }
                     default:
                     {
-                        sprintf(str, "%ss%s r%u, r%u, %s r%u", DataProcessing_arm[op], Conditions[cond], rd, rm, Shifters[shift], rs);
+                        sprintf(str, "%s%s%s r%u, r%u, %s r%u", DataProcessing_arm[op], s, Conditions[cond], rd, rm, Shifters[shift], rs);
                     }
                     }
                 }
@@ -791,15 +792,22 @@ static void Disassemble_arm(u32 code, u8 str[STRING_LENGTH], ARMARCH av) {
         }
         break;
     }
-    case 1: //Data processing and MSR immediate //todo: fix {S} bit 20
+    case 1: //Data processing and MSR immediate
     {
         if (cond == NV) break; //undefined
         u32 imm = ROR(BITS(c, 0, 8), 2 * BITS(c, 8, 4));
-        if (BITS(c, 20, 1)) //Data processing immediate, updates condition codes
+
+        if (BITS(c, 12, 4) == 15 && !BITS(c, 20, 1)) //MSR immediate
+        {
+            u8 cs = BITS(c, 22, 1) ? 's' : 'c'; //SPSR (1) or CPSR (0)
+            sprintf(str, "msr%s %cpsr_%s, #%X", Conditions[cond], cs, MSR_cxsf[BITS(c, 16, 4)], imm);
+        }
+        else //Data processing immediate
         {
             u8 op = BITS(c, 21, 4);
             u8 rd = BITS(c, 12, 4);
             u8 rn = BITS(c, 16, 4);
+            u8* s = BITS(c, 20, 1) ? "s" : "";
             switch (op)
             {
             case 8: //TST
@@ -815,22 +823,14 @@ static void Disassemble_arm(u32 code, u8 str[STRING_LENGTH], ARMARCH av) {
             case 15: //MVN
                 //only one source operand: <op>{<cond>}{S} <Rd>, <shift>
             {
-                sprintf(str, "%ss%s r%u, #%X", DataProcessing_arm[op], Conditions[cond], rd, imm);
+                sprintf(str, "%s%s%s r%u, #%X", DataProcessing_arm[op], s, Conditions[cond], rd, imm);
                 break;
             }
 
             default: //others: <op>{<cond>}{S} <Rd>, <Rn>, <shift>
             {
-                sprintf(str, "%ss%s r%u, r%u, #%X", DataProcessing_arm[op], Conditions[cond], rd, rn, imm);
+                sprintf(str, "%s%s%s r%u, r%u, #%X", DataProcessing_arm[op], s, Conditions[cond], rd, rn, imm);
             }
-            }
-        }
-        else //MSR immediate
-        {
-            if (BITS(c, 12, 4) == 15) //Should-Be-One (SBO)
-            {
-                u8 cs = BITS(c, 22, 1) ? 's' : 'c'; //SPSR (1) or CPSR (0)
-                sprintf(str, "msr%s %cpsr_%s, #%X", Conditions[cond], cs, MSR_cxsf[BITS(c, 16, 4)], imm);
             }
         }
         break;
@@ -1135,7 +1135,7 @@ int main(int argc, char* argv[]) {
 
 #ifdef DEBUG
     //Debug_DumpAllInstructions();
-    Debug_DisassembleCode_arm(0xa1a0c650);
+    Debug_DisassembleCode_arm(0xa1b0c650);
     //u32 i = 0;
     //while (++i)
     //{
