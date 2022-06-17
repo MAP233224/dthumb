@@ -178,7 +178,7 @@ const u8 LoadStoreRegister[8][6] = { "str", "strh", "strb", "ldrsb", "ldr", "ldr
 const u8 CPS_effect[2][3] = { "ie","id" };
 const u8 CPS_flags[8][5] = { "none", "f", "i", "if", "a", "af", "ai", "aif" };
 const u8 SignZeroExtend[4][5] = { "sxth","sxtb","uxth","uxtb" };
-//const u8 ShiftImmediate[3][4] = { "lsl", "lsr","asr" };
+const u8 Shifters[4][4] = { "lsl", "lsr","asr","ror" }; //+rrx
 u32 debug_na_count = 0;
 
 /* FUNCTIONS */
@@ -852,16 +852,39 @@ static void Disassemble_arm(u32 code, u8 str[STRING_LENGTH], ARMARCH av) {
         }
         else //post-indexed
         {
-            u8* w = BITS(c, 21, 1) ?  "t" : ""; //user mode
+            u8* w = BITS(c, 21, 1) ? "t" : ""; //user mode
             sprintf(str, "%s%s%s%s r%u, [r%u], #%s%X", ls, b, w, Conditions[cond], rd, rn, sign, imm);
         }
         break;
     }
-    case 3: //todo
+    case 3: //Load/store register offset
     {
         if (cond == NV) break; //undefined
-        //else
-        //Load/store register offset
+        if (BITS(c, 4, 1)) break; //undefined
+        u8 rm = BITS(c, 0, 4);
+        u8 shift = BITS(c, 5, 2);
+        u16 shift_imm = BITS(c, 7, 5);
+        u8 rd = BITS(c, 12, 4);
+        u8 rn = BITS(c, 16, 4);
+        u8* sign = BITS(c, 23, 1) ? "" : "-"; //sign of the immediate offset, + implicit
+        u8* ls = BITS(c, 20, 1) ? "ldr" : "str"; //load or store
+        u8* b = BITS(c, 22, 1) ? "b" : ""; //byte or word
+        u8 sstr[STRING_LENGTH] = "rrx"; //default, overwrite if incorrect
+        if ((shift == 1 || shift == 2) && !shift_imm) shift_imm = 32; //0~31 for LSL, 1~32 for LSR, ASR and ROR, always 0 for RRX
+         //todo: reformat the following test
+        if (!(shift == 3 && !shift_imm)) sprintf(sstr, "%s #%u", Shifters[shift], shift_imm);
+        //note: if rm==r15 or rn==r15 then UNPREDICTABLE
+        //note: if rn==rm then UNPREDICTABLE
+        if (BITS(c, 24, 1)) //offset or pre-indexed
+        {
+            u8* w = BITS(c, 21, 1) ? "!" : ""; //pre-indexed if 1
+            sprintf(str, "%s%s%s r%u, [r%u, %sr%u, %s]%s", ls, b, Conditions[cond], rd, rn, sign, rm, sstr, w);
+        }
+        else //post-indexed
+        {
+            u8* w = BITS(c, 21, 1) ? "t" : ""; //user mode
+            sprintf(str, "%s%s%s%s r%u, [r%u], %sr%u, %s", ls, b, w, Conditions[cond], rd, rn, sign, rm, sstr);
+        }
         break;
     }
     case 4: //Load/store multiple
@@ -971,7 +994,7 @@ static void Debug_DisassembleCode_arm(u32 c) {
     /* Debug: disassemble a single ARM instruction from the ARMv5TE architecture */
     u8 s[STRING_LENGTH] = { 0 };
     Disassemble_arm(c, s, ARMv5TE);
-    //printf("%08X -> %s\n", c, s);
+    printf("%08X -> %s\n", c, s);
 }
 
 static void Debug_DumpAllInstructions(void) {
@@ -1112,14 +1135,13 @@ int main(int argc, char* argv[]) {
 
 #ifdef DEBUG
     //Debug_DumpAllInstructions();
-    //Debug_DisassembleCode_arm(0xa5af0609);
-    u32 i=0;
-    while (++i)
-    {
-        Debug_DisassembleCode_arm(i);
-    }
-
-    printf("%u n/a instructions, %.2f complete.\n", debug_na_count, (float)debug_na_count / (float)0x100000000);
+    Debug_DisassembleCode_arm(0x3690f02c);
+    //u32 i = 0;
+    //while (++i)
+    //{
+    //    Debug_DisassembleCode_arm(i);
+    //}
+    //printf("%u n/a instructions, %.2f complete.\n", debug_na_count, (float)debug_na_count / (float)0x100000000);
 
 #else
 
@@ -1164,7 +1186,7 @@ int main(int argc, char* argv[]) {
             if (DisassembleFile(file_in, stdout, &filerange))
             {
                 printf("Successfully disassembled \"%s\".\n", filename_in);
-}
+            }
             else
             {
                 printf("ERROR: DisassembleFile failed.\n");
