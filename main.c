@@ -740,9 +740,27 @@ static void Disassemble_arm(u32 code, u8 str[STRING_LENGTH], ARMARCH av) {
         if (cond == NV) break; //undefined
         if (BITS(c, 4, 1))
         {
-            if (BITS(c, 7, 1))
+            if (BITS(c, 7, 1)) //Multiplies, extra load/stores: see fig 3-2
             {
-                //Multiplies, extra load/stores: see fig 3-2
+                if (!BITS(c, 5, 2) && !BITS(c, 22, 3)) //Multiply (accumulate)
+                {
+                    u8* s = BITS(c, 20, 1) ? "s" : "";
+                    u8 rd = BITS(c, 16, 4);
+                    u8 rm = BITS(c, 0, 4);
+                    u8 rn = BITS(c, 12, 4);
+                    u8 rs = BITS(c, 8, 4);
+                    if (BITS(c, 21, 1)) //MLA
+                    {
+                        sprintf(str, "mla%s%s r%u, r%u, r%u, r%u", s, Conditions[cond], rd, rm, rs, rn);
+                    }
+                    else //MUL
+                    {
+                        if (!rn) //Should-Be-Zero
+                        {
+                            sprintf(str, "mul%s%s r%u, r%u, r%u", s, Conditions[cond], rd, rm, rs);
+                        }
+                    }
+                }
             }
             else
             {
@@ -752,8 +770,6 @@ static void Disassemble_arm(u32 code, u8 str[STRING_LENGTH], ARMARCH av) {
                 }
                 else //Data processing register shift
                 {
-                    //todo: fix bit 20 {S}
-                    //note: pc as rd, rm, rn or rs is UNPREDICTABLE
                     u8 rm = BITS(c, 0, 4);
                     u8 shift = BITS(c, 5, 2);
                     u8 rs = BITS(c, 8, 4);
@@ -1135,7 +1151,7 @@ int main(int argc, char* argv[]) {
 
 #ifdef DEBUG
     //Debug_DumpAllInstructions();
-    Debug_DisassembleCode_arm(0xa1b0c650);
+    Debug_DisassembleCode_arm(0xa03c9595);
     //u32 i = 0;
     //while (++i)
     //{
@@ -1194,7 +1210,7 @@ int main(int argc, char* argv[]) {
             fclose(file_in);
         }
         return 0;
-    }
+}
 
     printf("Nothing was done\n");
 #endif // DEBUG
