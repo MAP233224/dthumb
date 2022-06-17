@@ -4,7 +4,7 @@ Each file **needs** to have a valid extension (at least one "dot" character in t
 If no output file is provided, it will print to ``stdout``.  
 You can optionally provide a range of addresses to be disassembled (in hexadecimal).
 ```
-dthumb <filein> [<fileout>] [start]-[end]
+dthumb <filein> {<fileout>} {<start>-<end>}
 ```
   
 Coming soon: support for ARM instructions
