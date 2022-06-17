@@ -752,14 +752,14 @@ static void Disassemble_arm(u32 code, u8 str[STRING_LENGTH], ARMARCH av) {
                 }
                 else //Data processing register shift
                 {
+                    //todo: fix bit 20 {S}
+                    //note: pc as rd, rm, rn or rs is UNPREDICTABLE
                     u8 rm = BITS(c, 0, 4);
                     u8 shift = BITS(c, 5, 2);
                     u8 rs = BITS(c, 8, 4);
                     u8 rd = BITS(c, 12, 4);
                     u8 rn = BITS(c, 16, 4);
                     u8 op = BITS(c, 21, 4);
-                    u8 sstr[STRING_LENGTH] = { 0 }; //todo: format shifter
-
                     switch (op)
                     {
                     case 8: //TST
@@ -767,18 +767,18 @@ static void Disassemble_arm(u32 code, u8 str[STRING_LENGTH], ARMARCH av) {
                     case 10: //CMP
                     case 11: //CMN
                     {
-                        sprintf(str, "%s%s r%u, %s", DataProcessing_arm[op], Conditions[cond], rn, sstr);
+                        sprintf(str, "%s%s r%u, r%u, %s r%u", DataProcessing_arm[op], Conditions[cond], rn, rm, Shifters[shift], rs);
                         break;
                     }
                     case 13: //MOV
                     case 15: //MVN
                     {
-                        sprintf(str, "%ss%s r%u, %s", DataProcessing_arm[op], Conditions[cond], rd, sstr);
+                        sprintf(str, "%ss%s r%u, r%u, %s r%u", DataProcessing_arm[op], Conditions[cond], rd, rm, Shifters[shift], rs);
                         break;
                     }
                     default:
                     {
-                        sprintf(str, "%ss%s r%u, r%u, %s", DataProcessing_arm[op], Conditions[cond], rd, rn, sstr);
+                        sprintf(str, "%ss%s r%u, r%u, %s r%u", DataProcessing_arm[op], Conditions[cond], rd, rm, Shifters[shift], rs);
                     }
                     }
                 }
@@ -791,7 +791,7 @@ static void Disassemble_arm(u32 code, u8 str[STRING_LENGTH], ARMARCH av) {
         }
         break;
     }
-    case 1: //Data processing and MSR immediate
+    case 1: //Data processing and MSR immediate //todo: fix {S} bit 20
     {
         if (cond == NV) break; //undefined
         u32 imm = ROR(BITS(c, 0, 8), 2 * BITS(c, 8, 4));
@@ -1135,13 +1135,13 @@ int main(int argc, char* argv[]) {
 
 #ifdef DEBUG
     //Debug_DumpAllInstructions();
-    Debug_DisassembleCode_arm(0x3690f02c);
+    Debug_DisassembleCode_arm(0xa1a0c650);
     //u32 i = 0;
     //while (++i)
     //{
     //    Debug_DisassembleCode_arm(i);
     //}
-    //printf("%u n/a instructions, %.2f complete.\n", debug_na_count, (float)debug_na_count / (float)0x100000000);
+    //printf("%u n/a instructions, %.2f%% complete.\n", debug_na_count, 100 - (100 * (float)debug_na_count / (float)0x100000000));
 
 #else
 
