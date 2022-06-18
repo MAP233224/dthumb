@@ -1,4 +1,4 @@
-//Nintendo DS CPU: ARM946E-S
+//Nintendo DS CPU: ARM946E-S (T, E, M variants included)
 //Architecture: ARMv5TE
 //ARM version: 5
 //THUMB version: 2
@@ -173,6 +173,7 @@ const u8 MSR_cxsf[16][5] = {
     "fsxc"
 };
 
+const u8 MultiplyLong[4][6] = { "umull", "umlal", "smull", "smlal" };
 const u8 MovAddSubImmediate[4][4] = { "mov","cmp","add","sub" }; //cmp won't be used
 const u8 LoadStoreRegister[8][6] = { "str", "strh", "strb", "ldrsb", "ldr", "ldrh", "ldrb", "ldrsh" };
 const u8 CPS_effect[2][3] = { "ie","id" };
@@ -742,27 +743,52 @@ static void Disassemble_arm(u32 code, u8 str[STRING_LENGTH], ARMARCH av) {
         {
             if (BITS(c, 7, 1)) //Multiplies, extra load/stores: see fig 3-2
             {
-                if (!BITS(c, 5, 2) && !BITS(c, 22, 3)) //Multiply (accumulate)
+                u8 oplo = BITS(c, 5, 2);
+                if (!oplo)
                 {
-                    u8* s = BITS(c, 20, 1) ? "s" : "";
-                    u8 rd = BITS(c, 16, 4);
-                    u8 rm = BITS(c, 0, 4);
-                    u8 rn = BITS(c, 12, 4);
-                    u8 rs = BITS(c, 8, 4);
-                    if (BITS(c, 21, 1)) //MLA
+                    if (!BITS(c, 22, 3)) //Multiply (accumulate)
                     {
-                        sprintf(str, "mla%s%s r%u, r%u, r%u, r%u", s, Conditions[cond], rd, rm, rs, rn);
-                    }
-                    else //MUL
-                    {
-                        if (!rn) //Should-Be-Zero
+                        u8 rm = BITS(c, 0, 4);
+                        u8 rs = BITS(c, 8, 4);
+                        u8 rn = BITS(c, 12, 4);
+                        u8 rd = BITS(c, 16, 4);
+                        u8* s = BITS(c, 20, 1) ? "s" : "";
+                        if (BITS(c, 21, 1)) //MLA
                         {
+                            sprintf(str, "mla%s%s r%u, r%u, r%u, r%u", s, Conditions[cond], rd, rm, rs, rn);
+                        }
+                        else //MUL
+                        {
+                            if (rn) break; //Should-Be-Zero
                             sprintf(str, "mul%s%s r%u, r%u, r%u", s, Conditions[cond], rd, rm, rs);
                         }
                     }
+                    else if (BITS(c, 23, 1)) //Multiply (accumulate) long
+                    {
+                        u8* s = BITS(c, 20, 1) ? "s" : "";
+                        sprintf(str, "%s%s%s r%u, r%u, r%u, r%u", MultiplyLong[BITS(c, 21, 2)], s, Conditions[cond], BITS(c, 12, 4), BITS(c, 16, 4), BITS(c, 0, 4), BITS(c, 8, 4));
+                    }
+                    else //Swap/swap byte (SWP, SWPB)
+                    {
+                        if (BITS(c, 8, 4)) break; //Should-Be-Zero
+                        u8* b = BITS(c, 22, 1) ? "b" : ""; //byte or no
+                        sprintf(str, "swp%s%s r%u, r%u, [r%u]", b, Conditions[cond], BITS(c, 12, 4), BITS(c, 0, 4), BITS(c, 16, 4));
+                    }
+                }
+                else if (oplo == 1)
+                {
+                    //Load/store halfword register offset -todo
+                     //Load/store halfword immediate offset -todo
+                }
+                else //oplo == 2 or 3
+                {
+                    //Load/store two words register offset -todo
+                    //Load/store signed halfword/byte register offset -todo
+                    //Load/store two words immediate offset -todo
+                    //Load/store signed halfword/byte immediate offset -todo
                 }
             }
-            else
+            else //todo
             {
                 if (BITS(c, 23, 2) == 2 && !BITS(c, 20, 1)) //Miscellanous instructions, see fig 3-3
                 {
@@ -1151,7 +1177,7 @@ int main(int argc, char* argv[]) {
 
 #ifdef DEBUG
     //Debug_DumpAllInstructions();
-    Debug_DisassembleCode_arm(0xa03c9595);
+    Debug_DisassembleCode_arm(0x514f7090);
     //u32 i = 0;
     //while (++i)
     //{
@@ -1210,7 +1236,7 @@ int main(int argc, char* argv[]) {
             fclose(file_in);
         }
         return 0;
-}
+    }
 
     printf("Nothing was done\n");
 #endif // DEBUG
