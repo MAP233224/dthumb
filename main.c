@@ -255,6 +255,44 @@ static void IfThen_reg_3(const u8* op, u8 str[STRING_LENGTH], u32 it, const u8* 
     else sprintf(str, "%ss r%u, r%u, r%u", op, rd, rm, rn);
 }
 
+static void FormatExtraLoadStore(u32 c, u8* str, u8 cond, const u8* op) {
+    /*  */
+    u8 rd = BITS(c, 12, 4);
+    u8 rn = BITS(c, 16, 4);
+    u8 w = BITS(c, 21, 1);
+    u8 p = BITS(c, 24, 1);
+    if (BITS(c, 22, 1)) //immediate
+    {
+        u8 ofs = (BITS(c, 8, 4) << 4) | BITS(c, 0, 4);
+        u8* sign = BITS(c, 23, 1) ? "+" : "-";
+        if (p) //offset, pre-indexed
+        {
+            u8* pre = w ? "!" : "";
+            sprintf(str, "%s%s r%u, [r%u, #%s%X]%s", op, Conditions[cond], rd, rn, sign, ofs, pre);
+        }
+        else //post-indexed
+        {
+            if (w) return; //w must be 0, else UNPREDICTABLE //todo: check if really invalid
+            sprintf(str, "%s%s r%u, [r%u], #%s%X", op, Conditions[cond], rd, rn, sign, ofs);
+        }
+    }
+    else //register
+    {
+        u8 rm = BITS(c, 0, 4);
+        u8* sign = BITS(c, 23, 1) ? "" : "-"; //implicit "+" in front of registers
+        if (p) //offset, pre-indexed
+        {
+            u8* pre = w ? "!" : "";
+            sprintf(str, "%s%s r%u, [r%u, %sr%u]%s", op, Conditions[cond], rd, rn, sign, rm, pre);
+        }
+        else //post-indexed
+        {
+            if (w) return; //w must be 0, else UNPREDICTABLE //todo: check if really invalid
+            sprintf(str, "%s%s r%u, [r%u], %sr%u", op, Conditions[cond], rd, rn, sign, rm);
+        }
+    }
+}
+
 static u32 Disassemble_thumb(u32 code, u8 str[STRING_LENGTH], u32 it, const u8* cond, ARMARCH tv) {
     /* Convert a code into a string, return 0 if processed THUMB 16-bit, 1 if processed THUMB 32-bit  */
 
@@ -775,17 +813,28 @@ static void Disassemble_arm(u32 code, u8 str[STRING_LENGTH], ARMARCH av) {
                         sprintf(str, "swp%s%s r%u, r%u, [r%u]", b, Conditions[cond], BITS(c, 12, 4), BITS(c, 0, 4), BITS(c, 16, 4));
                     }
                 }
-                else if (oplo == 1)
+                else
                 {
-                    //Load/store halfword register offset -todo
-                     //Load/store halfword immediate offset -todo
-                }
-                else //oplo == 2 or 3
-                {
-                    //Load/store two words register offset -todo
-                    //Load/store signed halfword/byte register offset -todo
-                    //Load/store two words immediate offset -todo
-                    //Load/store signed halfword/byte immediate offset -todo
+                    if (!BITS(c, 22, 1) && BITS(c, 8, 4)) break; //Should-Be-Zero if register offset
+                    if (oplo == 1) //Load/store halfword
+                    {
+                        u8* l = BITS(c, 20, 1) ? "ldrh" : "strh"; //load or store
+                        FormatExtraLoadStore(c, str, cond, l);
+                    }
+                    else
+                    {
+                        if (BITS(c, 20, 1)) //Load signed halfword/byte
+                        {
+                            u8* h = BITS(c, 5, 1) ? "ldrsh" : "ldrsb"; //halfword/byte
+                            FormatExtraLoadStore(c, str, cond, h);
+                        }
+                        else //Load/store two words
+                        {
+                            if (BITS(c, 12, 1)) break; //undefined if Rd is odd
+                            u8* s = BITS(c, 5, 1) ? "strd" : "ldrd"; //store or load
+                            FormatExtraLoadStore(c, str, cond, s);
+                        }
+                    }
                 }
             }
             else //todo
@@ -1177,7 +1226,7 @@ int main(int argc, char* argv[]) {
 
 #ifdef DEBUG
     //Debug_DumpAllInstructions();
-    Debug_DisassembleCode_arm(0x514f7090);
+    Debug_DisassembleCode_arm(0xe00100ff);
     //u32 i = 0;
     //while (++i)
     //{
