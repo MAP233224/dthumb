@@ -179,7 +179,7 @@ const u8 LoadStoreRegister[8][6] = { "str", "strh", "strb", "ldrsb", "ldr", "ldr
 const u8 CPS_effect[2][3] = { "ie","id" };
 const u8 CPS_flags[8][5] = { "none", "f", "i", "if", "a", "af", "ai", "aif" };
 const u8 SignZeroExtend[4][5] = { "sxth","sxtb","uxth","uxtb" };
-const u8 Shifters[4][4] = { "lsl", "lsr","asr","ror" }; //+rrx
+const u8 Shifters[4][4] = { "lsl","lsr","asr","ror" }; //+rrx
 u32 debug_na_count = 0;
 
 /* FUNCTIONS */
@@ -765,6 +765,7 @@ static u32 Disassemble_thumb(u32 code, u8 str[STRING_LENGTH], u32 it, const u8* 
 static void Disassemble_arm(u32 code, u8 str[STRING_LENGTH], ARMARCH av) {
     /**/
     //only supports ARMv5
+    //todo: extra caution for UNPREDICTABLE instructions, need to remove them? or decode regardless?
 
     u32 c = code; //alias
 
@@ -841,7 +842,7 @@ static void Disassemble_arm(u32 code, u8 str[STRING_LENGTH], ARMARCH av) {
             {
                 if (BITS(c, 23, 2) == 2 && !BITS(c, 20, 1)) //Miscellanous instructions, see fig 3-3
                 {
-                    //caution: bit 7 can be 1, relocate this branch
+                    //caution: bit 7 can be 1, relocate this branch!
                     //Branch/exchange instruction set
                     //Count leading zeroes
                     //Branch and link/exchange instruction set
@@ -885,13 +886,55 @@ static void Disassemble_arm(u32 code, u8 str[STRING_LENGTH], ARMARCH av) {
         {
             if (BITS(c, 23, 2) == 2 && !BITS(c, 20, 1)) //Miscellanous instructions, see fig 3-3
             {
-                //Move status reg to reg
-                //Move reg to status reg
-                //Enhanced DSP multiplies
+                if (!BITS(c, 0, 12) && BITS(c, 16, 4) == 15) //Move status reg to reg (MRS)
+                {
+                    //note: if Rd == PC, UNPREDICTABLE
+                    u8 sreg = BITS(c, 22, 1) ? 's' : 'c'; //SPSR (1) or CPSR (0)
+                    sprintf(str, "mrs%s r%u, %cpsr", Conditions[cond], BITS(c, 12, 4), sreg);
+                }
+                else if (BITS(c, 12, 4) == 15 && !BITS(c, 4, 8) && BITS(c, 21, 1)) //Move reg to status reg (MSR register)
+                {
+                    u8 sreg = BITS(c, 22, 1) ? 's' : 'c'; //SPSR (1) or CPSR (0)
+                    sprintf(str, "msr%s %cpsr_%s, r%u", Conditions[cond], sreg, MSR_cxsf[BITS(c, 16, 4)], BITS(c, 0, 4));
+                }
+                //else?
+                //Enhanced DSP multiplies (SMUL, SMULW, SMLAW, SMLAL +B or T depending on <y>)
             }
             else //Data processing immediate shift
             {
-
+                //todo: write a function for all 3 Data Processing switch-cases
+                u8 op = BITS(c, 21, 4);
+                u8 rm = BITS(c, 0, 4);
+                u8 shift = BITS(c, 5, 2);
+                u8 shift_imm = BITS(c, 7, 5);
+                u8 sstr[STRING_LENGTH] = "rrx"; //default, overwrite if incorrect
+                if ((shift == 1 || shift == 2) && !shift_imm) shift_imm = 32; //0~31 for LSL, 1~32 for LSR, ASR and ROR, always 0 for RRX
+                 //todo: reformat the following test
+                if (!(shift == 3 && !shift_imm)) sprintf(sstr, "%s #%u", Shifters[shift], shift_imm);
+                u8 rd = BITS(c, 12, 4);
+                u8 rn = BITS(c, 16, 4);
+                u8* s = BITS(c, 20, 1) ? "s" : "";
+                switch (op)
+                {
+                case 8: //TST
+                case 9: //TEQ
+                case 10: //CMP
+                case 11: //CMN
+                {
+                    sprintf(str, "%s%s r%u, r%u, %s", DataProcessing_arm[op], Conditions[cond], rn, rm, sstr);
+                    break;
+                }
+                case 13: //MOV
+                case 15: //MVN
+                {
+                    sprintf(str, "%s%s%s r%u, r%u, %s", DataProcessing_arm[op], s, Conditions[cond], rd, rm, sstr);
+                    break;
+                }
+                default:
+                {
+                    sprintf(str, "%s%s%s r%u, r%u, r%u, %s", DataProcessing_arm[op], s, Conditions[cond], rd, rn, rm, sstr);
+                }
+                }
             }
         }
         break;
@@ -903,8 +946,8 @@ static void Disassemble_arm(u32 code, u8 str[STRING_LENGTH], ARMARCH av) {
 
         if (BITS(c, 12, 4) == 15 && !BITS(c, 20, 1)) //MSR immediate
         {
-            u8 cs = BITS(c, 22, 1) ? 's' : 'c'; //SPSR (1) or CPSR (0)
-            sprintf(str, "msr%s %cpsr_%s, #%X", Conditions[cond], cs, MSR_cxsf[BITS(c, 16, 4)], imm);
+            u8 sreg = BITS(c, 22, 1) ? 's' : 'c'; //SPSR (1) or CPSR (0)
+            sprintf(str, "msr%s %cpsr_%s, #%X", Conditions[cond], sreg, MSR_cxsf[BITS(c, 16, 4)], imm);
         }
         else //Data processing immediate
         {
@@ -1239,7 +1282,7 @@ int main(int argc, char* argv[]) {
 
 #ifdef DEBUG
     //Debug_DumpAllInstructions();
-    Debug_DisassembleCode_arm(0xe00100ff);
+    Debug_DisassembleCode_arm(0x11190280);
     //u32 i = 0;
     //while (++i)
     //{
