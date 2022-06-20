@@ -841,7 +841,12 @@ static void Disassemble_arm(u32 code, u8 str[STRING_LENGTH], ARMARCH av) {
             {
                 if (BITS(c, 23, 2) == 2 && !BITS(c, 20, 1)) //Miscellanous instructions, see fig 3-3
                 {
-
+                    //caution: bit 7 can be 1, relocate this branch
+                    //Branch/exchange instruction set
+                    //Count leading zeroes
+                    //Branch and link/exchange instruction set
+                    //Enhanced DSP add/sub
+                    //Software breakpoint
                 }
                 else //Data processing register shift
                 {
@@ -878,8 +883,16 @@ static void Disassemble_arm(u32 code, u8 str[STRING_LENGTH], ARMARCH av) {
         }
         else
         {
-            //Data processing immediate shift
-            //Miscellanous instructions, see fig 3-3
+            if (BITS(c, 23, 2) == 2 && !BITS(c, 20, 1)) //Miscellanous instructions, see fig 3-3
+            {
+                //Move status reg to reg
+                //Move reg to status reg
+                //Enhanced DSP multiplies
+            }
+            else //Data processing immediate shift
+            {
+
+            }
         }
         break;
     }
