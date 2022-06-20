@@ -1075,8 +1075,10 @@ static void Disassemble_arm(u32 code, u8 str[STRING_LENGTH], ARMARCH av) {
     case 6: //todo
     {
         //if (cond == NV) break; //only unpredictable prior to ARMv5
-        //else
-        //Coprocessor load/store and double register transfers
+        //Coprocessor load/store and double register transfers (MCRR, MRRC)
+        //note: if PC is specified for Rn or Rd, UNPREDICTABLE
+        u8* ls = BITS(c, 20, 1) ? "mrrc" : "mcrr";
+        sprintf(str, "%s%s p%u, #%X, r%u, r%u, c%u", ls, Conditions[cond], BITS(c, 8, 4), BITS(c, 4, 4), BITS(c, 12, 4), BITS(c, 16, 4), BITS(c, 0, 4));
         break;
     }
     case 7: //todo
@@ -1282,7 +1284,7 @@ int main(int argc, char* argv[]) {
 
 #ifdef DEBUG
     //Debug_DumpAllInstructions();
-    Debug_DisassembleCode_arm(0x11190280);
+    Debug_DisassembleCode_arm(0xfc5d5f09);
     //u32 i = 0;
     //while (++i)
     //{
