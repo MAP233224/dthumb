@@ -898,7 +898,7 @@ static void Disassemble_arm(u32 code, u8 str[STRING_LENGTH], ARMARCH av) {
                     sprintf(str, "msr%s %cpsr_%s, r%u", Conditions[cond], sreg, MSR_cxsf[BITS(c, 16, 4)], BITS(c, 0, 4));
                 }
                 //else?
-                //Enhanced DSP multiplies (SMUL, SMULW, SMLAW, SMLAL +B or T depending on <y>)
+                //Enhanced DSP multiplies (SMUL, SMULW, SMLAW, SMLAL (B | T) depending on <y>)
             }
             else //Data processing immediate shift
             {
@@ -1072,10 +1072,9 @@ static void Disassemble_arm(u32 code, u8 str[STRING_LENGTH], ARMARCH av) {
         }
         break;
     }
-    case 6: //todo
+    case 6: //Coprocessor load/store and double register transfers (MCRR, MRRC)
     {
         //if (cond == NV) break; //only unpredictable prior to ARMv5
-        //Coprocessor load/store and double register transfers (MCRR, MRRC)
         //note: if PC is specified for Rn or Rd, UNPREDICTABLE
         u8* ls = BITS(c, 20, 1) ? "mrrc" : "mcrr";
         sprintf(str, "%s%s p%u, #%X, r%u, r%u, c%u", ls, Conditions[cond], BITS(c, 8, 4), BITS(c, 4, 4), BITS(c, 12, 4), BITS(c, 16, 4), BITS(c, 0, 4));
@@ -1083,14 +1082,36 @@ static void Disassemble_arm(u32 code, u8 str[STRING_LENGTH], ARMARCH av) {
     }
     case 7: //todo
     {
-        //if (cond == NV) break; //only unpredictable prior to ARMv5
-        if (BITS(c, 24, 1)) //SWI
+        if (BITS(c, 24, 1)) //Software Interrupt (SWI)
         {
+            if (cond == NV) break;
             sprintf(str, "swi%s #%X", Conditions[cond], BITS(c, 0, 24));
         }
-        //else
-        //Coprocessor data processing
-        //Coprocessor register transfer
+        else
+        {
+            //if (cond == NV) break; //only unpredictable prior to ARMv5
+            if (BITS(c, 4, 1)) //Coprocessor register transfer
+            {
+
+            }
+            else //Coprocessor data processing
+            {
+                u8 p = BITS(c, 8, 4);
+                u8 op1 = BITS(c, 20, 4);
+                u8 crd = BITS(c, 12, 4);
+                u8 crn = BITS(c, 16, 4);
+                u8 crm = BITS(c, 0, 4);
+                u8 op2 = BITS(c, 5, 3);
+                if (cond == NV) //CDP2
+                {
+                    sprintf(str, "cdp2 p%u, #%X, c%u, c%u, c%u, #%X", p, op1, crd, crn, crm, op2); //no condition suffix for cdp2
+                }
+                else //CDP
+                {
+                    sprintf(str, "cdp%s p%u, #%X, c%u, c%u, c%u, #%X", Conditions[cond], p, op1, crd, crn, crm, op2);
+                }
+            }
+        }
         break;
     }
     //also: unconditionnal instructions if bits 28 to 31 are 1111
@@ -1284,7 +1305,7 @@ int main(int argc, char* argv[]) {
 
 #ifdef DEBUG
     //Debug_DumpAllInstructions();
-    Debug_DisassembleCode_arm(0xfc5d5f09);
+    Debug_DisassembleCode_arm(0x1effffef);
     //u32 i = 0;
     //while (++i)
     //{
