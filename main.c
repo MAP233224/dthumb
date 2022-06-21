@@ -887,11 +887,45 @@ static void Disassemble_arm(u32 code, u8 str[STRING_LENGTH], ARMARCH av) {
             {
                 if (BITS(c, 23, 2) == 2 && !BITS(c, 20, 1)) //Miscellanous instructions, see fig 3-3
                 {
-                    //Branch/exchange instruction set
-                    //Count leading zeroes
-                    //Branch and link/exchange instruction set
-                    //Enhanced DSP add/sub
-                    //Software breakpoint
+                    u8 oplo = BITS(c, 5, 2);
+                    u8 ophi = BITS(c, 21, 2);
+                    switch (oplo)
+                    {
+                    case 0:
+                    {
+                        if (ophi == 3) //Count leading zeroes (CLZ)
+                        {
+                            //note: if PC is in either register, UNPREDICTABLE
+                            if (!BITS(c, 16, 4) || !BITS(c, 8, 4)) break; //Should-Be-One
+                            size = sprintf(str, "clz%s r%u, r%u", Conditions[cond], BITS(c, 12, 4), BITS(c, 0, 4));
+                        }
+                        else if (ophi == 1)//Branch/exchange instruction set (BX)
+                        {
+                            if (BITS(c, 8, 12) != 0xfff) break; //Should-Be-One
+                            size = sprintf(str, "bx%s r%u", Conditions[cond], BITS(c, 0, 4));
+                        }
+                        break;
+                    }
+                    case 1: //Branch and link/exchange instruction set (BLX)
+                    {
+                        if (ophi != 1) break;
+                        if (BITS(c, 8, 12) != 0xfff) break; //Should-Be-One
+                        size = sprintf(str, "blx%s r%u", Conditions[cond], BITS(c, 0, 4));
+                        break;
+                    }
+                    case 2: //Enhanced DSP add/sub (QADD, QDADD, QSUB, QDSUB)
+                    {
+                        const u8 DSP_AddSub[4][6] = { "qadd","qsub","qdadd","qdsub" };
+
+                        break;
+                    }
+                    case 3: //Software breakpoint (BKPT)
+                    {
+                        if (ophi != 1) break;
+                        size = sprintf(str, "bkpt #%X", (BITS(c, 8, 12) << 4) | BITS(c, 0, 4));
+                        break;
+                    }
+                    }
                 }
                 else //Data processing register shift
                 {
@@ -930,7 +964,7 @@ static void Disassemble_arm(u32 code, u8 str[STRING_LENGTH], ARMARCH av) {
         {
             if (BITS(c, 23, 2) == 2 && !BITS(c, 20, 1)) //Miscellanous instructions, see fig 3-3
             {
-                if (BITS(c, 7, 1)) //Enhanced DSP multiplies -todo
+                if (BITS(c, 7, 1)) //Enhanced DSP multiplies
                 {
                     //note: PC for any register is UNPREDICTABLE
                     u8 rm = BITS(c, 0, 4);
@@ -997,7 +1031,6 @@ static void Disassemble_arm(u32 code, u8 str[STRING_LENGTH], ARMARCH av) {
                 u8 shift_imm = BITS(c, 7, 5);
                 u8 sstr[STRING_LENGTH] = "rrx"; //default, overwrite if incorrect
                 if ((shift == 1 || shift == 2) && !shift_imm) shift_imm = 32; //0~31 for LSL, 1~32 for LSR, ASR and ROR, always 0 for RRX
-                 //todo: reformat the following test
                 if (!(shift == 3 && !shift_imm)) sprintf(sstr, "%s #%u", Shifters[shift], shift_imm);
                 u8 rd = BITS(c, 12, 4);
                 u8 rn = BITS(c, 16, 4);
@@ -1106,7 +1139,6 @@ static void Disassemble_arm(u32 code, u8 str[STRING_LENGTH], ARMARCH av) {
         u8* b = BITS(c, 22, 1) ? "b" : ""; //byte or word
         u8 sstr[STRING_LENGTH] = "rrx"; //default, overwrite if incorrect
         if ((shift == 1 || shift == 2) && !shift_imm) shift_imm = 32; //0~31 for LSL, 1~32 for LSR, ASR and ROR, always 0 for RRX
-         //todo: reformat the following test
         if (!(shift == 3 && !shift_imm)) sprintf(sstr, "%s #%u", Shifters[shift], shift_imm);
         //note: if rm==r15 or rn==r15 then UNPREDICTABLE
         //note: if rn==rm then UNPREDICTABLE
@@ -1276,7 +1308,6 @@ static int DisassembleFile(FILE* in, FILE* out, FILERANGE* range) {
 static int IsValidPath(u8* path) {
     /* Check if length of path/filename is */
     //todo: check if you can also open it
-    //todo: check for "." in the name, need file extension
     u32 hasDotAndEom = 0;
     if (!path || !path[0]) return 0; //needs to be at least one char
     for (u32 i = 1; i < PATH_LENGTH; i++)
@@ -1353,7 +1384,7 @@ int main(int argc, char* argv[]) {
 
 #ifdef DEBUG
     //Debug_DumpAllInstructions();
-    Debug_DisassembleCode_arm(0xe16f0f8f);
+    Debug_DisassembleCode_arm(0x116fcf15);
     //u32 i = 0;
     //while (++i!=0xffffff) //4654 ms with variable size, 5137 ms with size == 64
     //{
@@ -1409,7 +1440,7 @@ int main(int argc, char* argv[]) {
             else
             {
                 printf("ERROR: DisassembleFile failed.\n");
-}
+            }
             fclose(file_in);
         }
         return 0;
