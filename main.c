@@ -175,14 +175,16 @@ const u8 MSR_cxsf[16][5] = {
     "fsxc"
 };
 
-const u8 DSP_Multiplies[4][6] = { "smla","","smlal","smul" }; //slot 1 empty, decided elsehow
+const u8 DSP_AddSub[4][6] = { "qadd", "qsub", "qdadd", "qdsub" };
+const u8 DSP_Multiplies[4][6] = { "smla", "", "smlal", "smul" }; //slot 1 empty, decided elsehow
 const u8 MultiplyLong[4][6] = { "umull", "umlal", "smull", "smlal" };
-const u8 MovAddSubImmediate[4][4] = { "mov","cmp","add","sub" }; //cmp won't be used
+const u8 MovAddSubImmediate[4][4] = { "mov", "cmp", "add", "sub" }; //cmp won't be used
 const u8 LoadStoreRegister[8][6] = { "str", "strh", "strb", "ldrsb", "ldr", "ldrh", "ldrb", "ldrsh" };
-const u8 CPS_effect[2][3] = { "ie","id" };
+const u8 CPS_effect[2][3] = { "ie", "id" };
 const u8 CPS_flags[8][5] = { "none", "f", "i", "if", "a", "af", "ai", "aif" };
-const u8 SignZeroExtend[4][5] = { "sxth","sxtb","uxth","uxtb" };
-const u8 Shifters[4][4] = { "lsl","lsr","asr","ror" }; //+rrx
+const u8 SignZeroExtend[4][5] = { "sxth", "sxtb", "uxth", "uxtb" };
+const u8 Shifters[4][4] = { "lsl", "lsr", "asr", "ror" }; //+rrx
+
 u32 debug_na_count = 0;
 
 /* FUNCTIONS */
@@ -915,8 +917,9 @@ static void Disassemble_arm(u32 code, u8 str[STRING_LENGTH], ARMARCH av) {
                     }
                     case 2: //Enhanced DSP add/sub (QADD, QDADD, QSUB, QDSUB)
                     {
-                        const u8 DSP_AddSub[4][6] = { "qadd","qsub","qdadd","qdsub" };
-
+                        //note: if PC is in either register, UNPREDICTABLE
+                        if (BITS(c, 8, 4)) break; //Should-Be-Zero
+                        size = sprintf(str, "%s%s r%u, r%u, r%u", DSP_AddSub[ophi], Conditions[cond], BITS(c, 12, 4), BITS(c, 0, 4), BITS(c, 16, 4));
                         break;
                     }
                     case 3: //Software breakpoint (BKPT)
@@ -1375,7 +1378,7 @@ static int IfValidRangeSet(FILERANGE* range, u8* r) {
 
 /* ENTRY POINT */
 
-#define DEBUG //comment out to disable debug ifdefs
+//#define DEBUG //comment out to disable debug ifdefs
 
 int main(int argc, char* argv[]) {
 
@@ -1384,7 +1387,7 @@ int main(int argc, char* argv[]) {
 
 #ifdef DEBUG
     //Debug_DumpAllInstructions();
-    Debug_DisassembleCode_arm(0x116fcf15);
+    Debug_DisassembleCode_arm(0x114de05e);
     //u32 i = 0;
     //while (++i!=0xffffff) //4654 ms with variable size, 5137 ms with size == 64
     //{
