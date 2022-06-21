@@ -17,6 +17,7 @@ THUMB: CPS, CPY, REV, SETEND, SXTB, SXTH, UXTB, UXTH
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <time.h>
 
 /* MACROS */
 
@@ -69,6 +70,7 @@ typedef enum {
 
 /* GLOBALS */
 
+//todo: maybe put "2" instead of "nv" (or nothing) in the last one
 const u8 Conditions[CONDITIONS_MAX][3] = { "eq", "ne", "cs", "cc", "mi", "pl", "vs", "vc", "hi", "ls", "ge", "lt", "gt", "le", "", "" }; //last two are "al" and "nv", but never displayed
 
 const u8 IT_xyz_0[CONDITIONS_MAX][4] = { //if then block suffixes
@@ -173,6 +175,7 @@ const u8 MSR_cxsf[16][5] = {
     "fsxc"
 };
 
+const u8 DSP_Multiplies[4][6] = { "smla","","smlal","smul" }; //slot 1 empty, decided elsehow
 const u8 MultiplyLong[4][6] = { "umull", "umlal", "smull", "smlal" };
 const u8 MovAddSubImmediate[4][4] = { "mov","cmp","add","sub" }; //cmp won't be used
 const u8 LoadStoreRegister[8][6] = { "str", "strh", "strb", "ldrsb", "ldr", "ldrh", "ldrb", "ldrsh" };
@@ -183,6 +186,44 @@ const u8 Shifters[4][4] = { "lsl","lsr","asr","ror" }; //+rrx
 u32 debug_na_count = 0;
 
 /* FUNCTIONS */
+
+static void SubstituteSubString(u8 dst[STRING_LENGTH], u32 index, const u8* sub, u32 size) {
+    /* Insert sub string of length size (< STRING_LENGTH) at dst[index] */
+    u8 tmp[STRING_LENGTH] = { 0 }; //zinit
+    memcpy(&tmp, sub, size); //init
+    memcpy(&tmp[size], &dst[index + size + 1], STRING_LENGTH - index - size - 1); //save
+    memcpy(&dst[index], tmp, STRING_LENGTH - index - 1); //restore
+}
+
+static void CheckSpecialRegister(u8* str, int size) {
+    /* Replace special registers by their common names */
+    //(r12->ip), r13->sp, r14->lr, r15->pc
+    //todo: check for size != -1
+    for (int i = 0; i < size; i++) //when using a variable string size (return value of sprintf), 10% faster than constant size of STRING_LENGTH 64
+    {
+        if (str[i] == 'r')
+        {
+            switch (*(u16*)&str[i + 1])
+            {
+            case 0x3331: //"13"
+            {
+                SubstituteSubString(str, i, "sp", sizeof("sp") - 1);
+                break;
+            }
+            case 0x3431: //"14"
+            {
+                SubstituteSubString(str, i, "lr", sizeof("lr") - 1);
+                break;
+            }
+            case 0x3531: //"15"
+            {
+                SubstituteSubString(str, i, "pc", sizeof("pc") - 1);
+                break;
+            }
+            }
+        }
+    }
+}
 
 static u32 FormatStringRegisterList_thumb(u8 str[STRING_LENGTH], u16 reg, const u8 pclr[3]) {
     /**/
@@ -231,28 +272,28 @@ static u32 CountBits(u8 b) {
     return lut[b & 0x0f] + lut[b >> 4];
 }
 
-static void IfThen_imm_2(const u8* op, u8 str[STRING_LENGTH], u32 it, const u8* cond, u8 rm, u8 imm) {
-    /* Formatting */
-    if (it) sprintf(str, "%s%s r%u, #%X", op, cond, rm, imm);
-    else sprintf(str, "%ss r%u, #%X", op, rm, imm);
+static int IfThen_imm_2(const u8* op, u8 str[STRING_LENGTH], u32 it, const u8* cond, u8 rm, u8 imm) {
+    /* Formatting, return size of characters written by sprintf */
+    if (it) return sprintf(str, "%s%s r%u, #%X", op, cond, rm, imm);
+    return sprintf(str, "%ss r%u, #%X", op, rm, imm);
 }
 
-static void IfThen_imm_3(const u8* op, u8 str[STRING_LENGTH], u32 it, const u8* cond, u8 rd, u8 rm, u8 imm) {
-    /* Formatting */
-    if (it) sprintf(str, "%s%s r%u, r%u, #%X", op, cond, rd, rm, imm);
-    else sprintf(str, "%ss r%u, r%u, #%X", op, rd, rm, imm);
+static int IfThen_imm_3(const u8* op, u8 str[STRING_LENGTH], u32 it, const u8* cond, u8 rd, u8 rm, u8 imm) {
+    /* Formatting, return size of characters written by sprintf */
+    if (it) return sprintf(str, "%s%s r%u, r%u, #%X", op, cond, rd, rm, imm);
+    return sprintf(str, "%ss r%u, r%u, #%X", op, rd, rm, imm);
 }
 
-static void IfThen_reg_2(const u8* op, u8 str[STRING_LENGTH], u32 it, const u8* cond, u8 rd, u8 rm) {
-    /* Formatting */
-    if (it) sprintf(str, "%s%s r%u, r%u", op, cond, rd, rm);
-    else sprintf(str, "%ss r%u, r%u", op, rd, rm);
+static int IfThen_reg_2(const u8* op, u8 str[STRING_LENGTH], u32 it, const u8* cond, u8 rd, u8 rm) {
+    /* Formatting, return size of characters written by sprintf */
+    if (it) return sprintf(str, "%s%s r%u, r%u", op, cond, rd, rm);
+    return sprintf(str, "%ss r%u, r%u", op, rd, rm);
 }
 
-static void IfThen_reg_3(const u8* op, u8 str[STRING_LENGTH], u32 it, const u8* cond, u8 rd, u8 rm, u8 rn) {
-    /* Formatting */
-    if (it) sprintf(str, "%s%s r%u, r%u, r%u", op, cond, rd, rm, rn);
-    else sprintf(str, "%ss r%u, r%u, r%u", op, rd, rm, rn);
+static int IfThen_reg_3(const u8* op, u8 str[STRING_LENGTH], u32 it, const u8* cond, u8 rd, u8 rm, u8 rn) {
+    /* Formatting, return size of characters written by sprintf */
+    if (it) return sprintf(str, "%s%s r%u, r%u, r%u", op, cond, rd, rm, rn);
+    return sprintf(str, "%ss r%u, r%u, r%u", op, rd, rm, rn);
 }
 
 static void FormatExtraLoadStore(u32 c, u8* str, u8 cond, const u8* op) {
@@ -298,6 +339,7 @@ static u32 Disassemble_thumb(u32 code, u8 str[STRING_LENGTH], u32 it, const u8* 
 
     u32 thumb_size = 0; //return value
     u16 c = code & 0xffff; //low 16 bits
+    int size = 0; //return value of sprintf to be passed to CheckSpecialRegister
 
     switch (c >> 13)
     {
@@ -315,12 +357,12 @@ static u32 Disassemble_thumb(u32 code, u8 str[STRING_LENGTH], u32 it, const u8* 
                 }
                 else //MOV register
                 {
-                    sprintf(str, "movs r%u, r%u", BITS(c, 0, 3), BITS(c, 3, 3));
+                    size = sprintf(str, "movs r%u, r%u", BITS(c, 0, 3), BITS(c, 3, 3));
                 }
             }
             else //ARMv4T
             {
-                sprintf(str, "lsl r%u, r%u, #%X", BITS(c, 0, 3), BITS(c, 3, 3), BITS(c, 6, 5));
+                size = sprintf(str, "lsl r%u, r%u, #%X", BITS(c, 0, 3), BITS(c, 3, 3), BITS(c, 6, 5));
             }
             break;
         }
@@ -332,7 +374,7 @@ static u32 Disassemble_thumb(u32 code, u8 str[STRING_LENGTH], u32 it, const u8* 
             }
             else //ARMv4T
             {
-                sprintf(str, "lsr r%u, r%u, #%X", BITS(c, 0, 3), BITS(c, 3, 3), BITS(c, 6, 5));
+                size = sprintf(str, "lsr r%u, r%u, #%X", BITS(c, 0, 3), BITS(c, 3, 3), BITS(c, 6, 5));
             }
             break;
         }
@@ -344,7 +386,7 @@ static u32 Disassemble_thumb(u32 code, u8 str[STRING_LENGTH], u32 it, const u8* 
             }
             else //ARMv4T
             {
-                sprintf(str, "asr r%u, r%u, #%X", BITS(c, 0, 3), BITS(c, 3, 3), BITS(c, 6, 5));
+                size = sprintf(str, "asr r%u, r%u, #%X", BITS(c, 0, 3), BITS(c, 3, 3), BITS(c, 6, 5));
             }
             break;
         }
@@ -360,7 +402,7 @@ static u32 Disassemble_thumb(u32 code, u8 str[STRING_LENGTH], u32 it, const u8* 
                     }
                     else //ARMv4T
                     {
-                        sprintf(str, "sub r%u, r%u, #%X", BITS(c, 0, 3), BITS(c, 3, 3), BITS(c, 6, 3));
+                        size = sprintf(str, "sub r%u, r%u, #%X", BITS(c, 0, 3), BITS(c, 3, 3), BITS(c, 6, 3));
                     }
                 }
                 else //ADD immediate
@@ -371,7 +413,7 @@ static u32 Disassemble_thumb(u32 code, u8 str[STRING_LENGTH], u32 it, const u8* 
                     }
                     else //ARMv4T
                     {
-                        sprintf(str, "add r%u, r%u, #%X", BITS(c, 0, 3), BITS(c, 3, 3), BITS(c, 6, 3));
+                        size = sprintf(str, "add r%u, r%u, #%X", BITS(c, 0, 3), BITS(c, 3, 3), BITS(c, 6, 3));
                     }
                 }
             }
@@ -385,7 +427,7 @@ static u32 Disassemble_thumb(u32 code, u8 str[STRING_LENGTH], u32 it, const u8* 
                     }
                     else //ARMv4T
                     {
-                        sprintf(str, "sub r%u, r%u, r%u", BITS(c, 0, 3), BITS(c, 3, 3), BITS(c, 6, 3));
+                        size = sprintf(str, "sub r%u, r%u, r%u", BITS(c, 0, 3), BITS(c, 3, 3), BITS(c, 6, 3));
                     }
                 }
                 else //ADD register
@@ -396,7 +438,7 @@ static u32 Disassemble_thumb(u32 code, u8 str[STRING_LENGTH], u32 it, const u8* 
                     }
                     else //ARMv4T
                     {
-                        sprintf(str, "add r%u, r%u, r%u", BITS(c, 0, 3), BITS(c, 3, 3), BITS(c, 6, 3));
+                        size = sprintf(str, "add r%u, r%u, r%u", BITS(c, 0, 3), BITS(c, 3, 3), BITS(c, 6, 3));
                     }
                 }
             }
@@ -409,7 +451,7 @@ static u32 Disassemble_thumb(u32 code, u8 str[STRING_LENGTH], u32 it, const u8* 
     case 1: //0x2000 //MOV CMP, ADD, SUB
     {
         u8 index = BITS(c, 11, 2);
-        if (index == 1) sprintf(str, "cmp r%u, #%X", BITS(c, 8, 3), BITS(c, 0, 8));
+        if (index == 1) size = sprintf(str, "cmp r%u, #%X", BITS(c, 8, 3), BITS(c, 0, 8));
         else IfThen_imm_2(MovAddSubImmediate[index], str, it, cond, BITS(c, 8, 3), BITS(c, 0, 8));
         break;
     }
@@ -426,8 +468,8 @@ static u32 Disassemble_thumb(u32 code, u8 str[STRING_LENGTH], u32 it, const u8* 
                 {
                     u8 d = (BITS(c, 7, 1) << 3) | (BITS(c, 0, 3));
                     u8 m = BITS(c, 3, 4);
-                    if (m == 13) sprintf(str, "add r%u, sp, r%u", d, d); //ADD sp + register v1
-                    else sprintf(str, "add r%u, r%u", d, m); //ADD
+                    if (m == 13) size = sprintf(str, "add r%u, sp, r%u", d, d); //ADD sp + register v1
+                    else size = sprintf(str, "add r%u, r%u", d, m); //ADD
                 }
                 break;
             }
@@ -435,19 +477,19 @@ static u32 Disassemble_thumb(u32 code, u8 str[STRING_LENGTH], u32 it, const u8* 
             {
                 if (tv >= ARMv5TE)
                 {
-                    sprintf(str, "cmp r%u, r%u", (BITS(c, 7, 1) << 3) | (BITS(c, 0, 3)), BITS(c, 3, 4));
+                    size = sprintf(str, "cmp r%u, r%u", (BITS(c, 7, 1) << 3) | (BITS(c, 0, 3)), BITS(c, 3, 4));
                 }
                 break;
             }
             case 2: //MOV register
             {
-                sprintf(str, "mov r%u, r%u", (BITS(c, 7, 1) << 3) | (BITS(c, 0, 3)), BITS(c, 3, 4));
+                size = sprintf(str, "mov r%u, r%u", (BITS(c, 7, 1) << 3) | (BITS(c, 0, 3)), BITS(c, 3, 4));
                 break;
             }
             case 3:
             {
-                if (BITS(c, 7, 1)) sprintf(str, "blx r%u", BITS(c, 3, 4)); //BLX
-                else sprintf(str, "bx r%u", BITS(c, 3, 4)); //BX
+                if (BITS(c, 7, 1)) size = sprintf(str, "blx r%u", BITS(c, 3, 4)); //BLX
+                else size = sprintf(str, "bx r%u", BITS(c, 3, 4)); //BX
                 break;
             }
             }
@@ -461,7 +503,7 @@ static u32 Disassemble_thumb(u32 code, u8 str[STRING_LENGTH], u32 it, const u8* 
             case 10:
             case 11:
             {
-                sprintf(str, "%s r%u, r%u", DataProcessing_thumb[index], BITS(c, 0, 3), BITS(c, 3, 3));
+                size = sprintf(str, "%s r%u, r%u", DataProcessing_thumb[index], BITS(c, 0, 3), BITS(c, 3, 3));
                 break;
             }
             default:
@@ -472,8 +514,8 @@ static u32 Disassemble_thumb(u32 code, u8 str[STRING_LENGTH], u32 it, const u8* 
         }
         else
         {
-            if (BITS(c, 12, 1)) sprintf(str, "%s r%u, [r%u, r%u]", LoadStoreRegister[BITS(c, 9, 3)], BITS(c, 0, 3), BITS(c, 3, 3), BITS(c, 6, 3)); //Load/store register offset  
-            else sprintf(str, "ldr r%u, [pc, #%X]", BITS(c, 8, 3), 4 * BITS(c, 0, 8)); //LDR literal pool
+            if (BITS(c, 12, 1)) size = sprintf(str, "%s r%u, [r%u, r%u]", LoadStoreRegister[BITS(c, 9, 3)], BITS(c, 0, 3), BITS(c, 3, 3), BITS(c, 6, 3)); //Load/store register offset  
+            else size = sprintf(str, "ldr r%u, [pc, #%X]", BITS(c, 8, 3), 4 * BITS(c, 0, 8)); //LDR literal pool
         }
         break;
     }
@@ -484,22 +526,22 @@ static u32 Disassemble_thumb(u32 code, u8 str[STRING_LENGTH], u32 it, const u8* 
         {
         case 0: //STR
         {
-            sprintf(str, "str r%u, [r%u, #%X]", BITS(c, 0, 3), BITS(c, 3, 3), 4 * BITS(c, 6, 5));
+            size = sprintf(str, "str r%u, [r%u, #%X]", BITS(c, 0, 3), BITS(c, 3, 3), 4 * BITS(c, 6, 5));
             break;
         }
         case 1: //LDR
         {
-            sprintf(str, "ldr r%u, [r%u, #%X]", BITS(c, 0, 3), BITS(c, 3, 3), 4 * BITS(c, 6, 5));
+            size = sprintf(str, "ldr r%u, [r%u, #%X]", BITS(c, 0, 3), BITS(c, 3, 3), 4 * BITS(c, 6, 5));
             break;
         }
         case 2: //STRB
         {
-            sprintf(str, "strb r%u, [r%u, #%X]", BITS(c, 0, 3), BITS(c, 3, 3), BITS(c, 6, 5));
+            size = sprintf(str, "strb r%u, [r%u, #%X]", BITS(c, 0, 3), BITS(c, 3, 3), BITS(c, 6, 5));
             break;
         }
         case 3: //LDRB
         {
-            sprintf(str, "ldrb r%u, [r%u, #%X]", BITS(c, 0, 3), BITS(c, 3, 3), BITS(c, 6, 5));
+            size = sprintf(str, "ldrb r%u, [r%u, #%X]", BITS(c, 0, 3), BITS(c, 3, 3), BITS(c, 6, 5));
             break;
         }
         }
@@ -512,14 +554,14 @@ static u32 Disassemble_thumb(u32 code, u8 str[STRING_LENGTH], u32 it, const u8* 
         {
             if (tv >= ARMv5TE)
             {
-                if (BITS(c, 11, 1)) sprintf(str, "ldr r%u, [sp, #%X]", BITS(c, 8, 3), 4 * BITS(c, 0, 8)); //LDR stack
-                else sprintf(str, "str r%u, [sp, #%X]", BITS(c, 8, 3), 4 * BITS(c, 0, 8)); //STR stack
+                if (BITS(c, 11, 1)) size = sprintf(str, "ldr r%u, [sp, #%X]", BITS(c, 8, 3), 4 * BITS(c, 0, 8)); //LDR stack
+                else size = sprintf(str, "str r%u, [sp, #%X]", BITS(c, 8, 3), 4 * BITS(c, 0, 8)); //STR stack
             }
         }
         else
         {
-            if (BITS(c, 11, 1)) sprintf(str, "ldrh r%u, [r%u, #%X]", BITS(c, 0, 3), BITS(c, 3, 3), 2 * BITS(c, 6, 5)); //LRDH immediate offset
-            else sprintf(str, "strh r%u, [r%u, #%X]", BITS(c, 0, 3), BITS(c, 3, 3), 2 * BITS(c, 6, 5)); //STRH immediate offset
+            if (BITS(c, 11, 1)) size = sprintf(str, "ldrh r%u, [r%u, #%X]", BITS(c, 0, 3), BITS(c, 3, 3), 2 * BITS(c, 6, 5)); //LRDH immediate offset
+            else size = sprintf(str, "strh r%u, [r%u, #%X]", BITS(c, 0, 3), BITS(c, 3, 3), 2 * BITS(c, 6, 5)); //STRH immediate offset
         }
         break;
     }
@@ -532,8 +574,8 @@ static u32 Disassemble_thumb(u32 code, u8 str[STRING_LENGTH], u32 it, const u8* 
             {
             case 0: //ADD/SUB sp
             {
-                if (BITS(c, 7, 1)) sprintf(str, "sub sp, sp, #%X", 4 * BITS(c, 0, 7));  //SUB             
-                else sprintf(str, "add sp, sp, #%X", 4 * BITS(c, 0, 7)); //ADD
+                if (BITS(c, 7, 1)) size = sprintf(str, "sub sp, sp, #%X", 4 * BITS(c, 0, 7)); //SUB             
+                else size = sprintf(str, "add sp, sp, #%X", 4 * BITS(c, 0, 7)); //ADD
                 break;
             }
             //Compare and branch on (non-)zero
@@ -542,15 +584,15 @@ static u32 Disassemble_thumb(u32 code, u8 str[STRING_LENGTH], u32 it, const u8* 
             case 9:
             case 11:
             {
-                if (BITS(c, 11, 1)) sprintf(str, "cbnz r%u, #%X", BITS(c, 0, 3), 4 + 2 * ((BITS(c, 9, 1) << 5) | BITS(c, 3, 5))); //CBNZ           
-                else sprintf(str, "cbz r%u, #%X", BITS(c, 0, 3), 4 + 2 * ((BITS(c, 9, 1) << 5) | BITS(c, 3, 5))); //CBZ               
+                if (BITS(c, 11, 1)) size = sprintf(str, "cbnz r%u, #%X", BITS(c, 0, 3), 4 + 2 * ((BITS(c, 9, 1) << 5) | BITS(c, 3, 5))); //CBNZ           
+                else size = sprintf(str, "cbz r%u, #%X", BITS(c, 0, 3), 4 + 2 * ((BITS(c, 9, 1) << 5) | BITS(c, 3, 5))); //CBZ               
                 break;
             }
             case 2: //Sign/zero extend
             {
                 if (tv >= ARMv6)
                 {
-                    sprintf(str, "%s r%u, r%u", SignZeroExtend[BITS(c, 6, 2)], BITS(c, 0, 3), BITS(c, 3, 3));
+                    size = sprintf(str, "%s r%u, r%u", SignZeroExtend[BITS(c, 6, 2)], BITS(c, 0, 3), BITS(c, 3, 3));
                 }
                 break;
             }
@@ -566,14 +608,14 @@ static u32 Disassemble_thumb(u32 code, u8 str[STRING_LENGTH], u32 it, const u8* 
                 {
                     if (FormatStringRegisterList_thumb(reglist, registers, "pc")) //if BitCount(registers) < 1 then UNPREDICTABLE
                     {
-                        sprintf(str, "pop {%s}", reglist);
+                        size = sprintf(str, "pop {%s}", reglist);
                     }
                 }
                 else //PUSH
                 {
                     if (FormatStringRegisterList_thumb(reglist, registers, "lr")) //if BitCount(registers) < 1 then UNPREDICTABLE
                     {
-                        sprintf(str, "push {%s}", reglist);
+                        size = sprintf(str, "push {%s}", reglist);
                     }
                 }
                 break;
@@ -582,12 +624,12 @@ static u32 Disassemble_thumb(u32 code, u8 str[STRING_LENGTH], u32 it, const u8* 
             {
                 if (tv >= ARMv6)
                 {
-                    if (c == 0xB650) sprintf(str, "setend le");
-                    else if (c == 0xB658) sprintf(str, "setend be");
+                    if (c == 0xB650) size = sprintf(str, "setend le");
+                    else if (c == 0xB658) size = sprintf(str, "setend be");
                     else if (BITS(c, 4, 8) == 100); //n/a
                     else if (BITS(c, 5, 7) == 51)
                     {
-                        if (!BITS(c, 3, 1)) sprintf(str, "cps%s %s", CPS_effect[BITS(c, 4, 1)], CPS_flags[BITS(c, 0, 3)]); //CPS
+                        if (!BITS(c, 3, 1)) size = sprintf(str, "cps%s %s", CPS_effect[BITS(c, 4, 1)], CPS_flags[BITS(c, 0, 3)]); //CPS
                     }
                 }
                 break;
@@ -600,12 +642,12 @@ static u32 Disassemble_thumb(u32 code, u8 str[STRING_LENGTH], u32 it, const u8* 
                     {
                     case 0: //REV
                     {
-                        sprintf(str, "rev r%u, r%u", BITS(c, 0, 3), BITS(c, 3, 3));
+                        size = sprintf(str, "rev r%u, r%u", BITS(c, 0, 3), BITS(c, 3, 3));
                         break;
                     }
                     case 1: //REV16
                     {
-                        sprintf(str, "rev16 r%u, r%u", BITS(c, 0, 3), BITS(c, 3, 3));
+                        size = sprintf(str, "rev16 r%u, r%u", BITS(c, 0, 3), BITS(c, 3, 3));
                         break;
                     }
                     case 2: //undefined
@@ -614,7 +656,7 @@ static u32 Disassemble_thumb(u32 code, u8 str[STRING_LENGTH], u32 it, const u8* 
                     }
                     case 3: //REVSH
                     {
-                        sprintf(str, "revsh r%u, r%u", BITS(c, 0, 3), BITS(c, 3, 3));
+                        size = sprintf(str, "revsh r%u, r%u", BITS(c, 0, 3), BITS(c, 3, 3));
                         break;
                     }
                     }
@@ -623,7 +665,7 @@ static u32 Disassemble_thumb(u32 code, u8 str[STRING_LENGTH], u32 it, const u8* 
             }
             case 14: //BKPT
             {
-                sprintf(str, "bkpt #%X", BITS(c, 0, 8));
+                size = sprintf(str, "bkpt #%X", BITS(c, 0, 8));
                 break;
             }
             case 15: //IT and NOP-hints
@@ -632,12 +674,12 @@ static u32 Disassemble_thumb(u32 code, u8 str[STRING_LENGTH], u32 it, const u8* 
                 if (mask) //IT
                 {
                     u8 firstcond = BITS(c, 4, 4);
-                    if (firstcond == 15); //n/a
+                    if (firstcond == NV); //n/a
                     else if (firstcond == 14 && CountBits(mask) != 1); //n/a
                     else
                     {
-                        if (firstcond & 1) sprintf(str, "it%s %s", IT_xyz_1[mask], Conditions[firstcond]);
-                        else sprintf(str, "it%s %s", IT_xyz_0[mask], Conditions[firstcond]);
+                        if (firstcond & 1) size = sprintf(str, "it%s %s", IT_xyz_1[mask], Conditions[firstcond]);
+                        else size = sprintf(str, "it%s %s", IT_xyz_0[mask], Conditions[firstcond]);
                     }
                 }
                 else //NOP-compatible hints
@@ -645,12 +687,12 @@ static u32 Disassemble_thumb(u32 code, u8 str[STRING_LENGTH], u32 it, const u8* 
                     u8 hint = BITS(c, 4, 4);
                     switch (hint)
                     {
-                    case 0: sprintf(str, "nop"); break;
-                    case 1: sprintf(str, "yield"); break;
-                    case 2: sprintf(str, "wfe"); break;
-                    case 3: sprintf(str, "wfi"); break;
-                    case 4: sprintf(str, "sev"); break;
-                    default: sprintf(str, "hint #%X", hint);
+                    case 0: size = sprintf(str, "nop"); break;
+                    case 1: size = sprintf(str, "yield"); break;
+                    case 2: size = sprintf(str, "wfe"); break;
+                    case 3: size = sprintf(str, "wfi"); break;
+                    case 4: size = sprintf(str, "sev"); break;
+                    default: size = sprintf(str, "hint #%X", hint);
                     }
                 }
                 break;
@@ -659,8 +701,8 @@ static u32 Disassemble_thumb(u32 code, u8 str[STRING_LENGTH], u32 it, const u8* 
         }
         else //add to SP or PC
         {
-            if (BITS(c, 11, 1)) sprintf(str, "add r%u, sp, #%X", BITS(c, 8, 3), 4 * BITS(c, 0, 8)); //ADD (SP plus immediate)
-            else sprintf(str, "adr r%u, #%X", BITS(c, 8, 3), 4 * BITS(c, 0, 8)); //ADR (pc)
+            if (BITS(c, 11, 1)) size = sprintf(str, "add r%u, sp, #%X", BITS(c, 8, 3), 4 * BITS(c, 0, 8)); //ADD (SP plus immediate)
+            else size = sprintf(str, "adr r%u, #%X", BITS(c, 8, 3), 4 * BITS(c, 0, 8)); //ADR (pc)
         }
         break;
     }
@@ -673,17 +715,17 @@ static u32 Disassemble_thumb(u32 code, u8 str[STRING_LENGTH], u32 it, const u8* 
             {
             case 14: //UDF "Permanently undefined space", OS dependant
             {
-                sprintf(str, "udf #%X", BITS(c, 0, 8));
+                size = sprintf(str, "udf #%X", BITS(c, 0, 8));
                 break;
             }
             case 15: //SWI
             {
-                sprintf(str, "swi #%X", BITS(c, 0, 8));
+                size = sprintf(str, "swi #%X", BITS(c, 0, 8));
                 break;
             }
             default: //B conditional
             {
-                sprintf(str, "b%s #%X", Conditions[BITS(c, 8, 4)], 4 + 2 * SIGNEX32_BITS(c, 0, 8));
+                size = sprintf(str, "b%s #%X", Conditions[BITS(c, 8, 4)], 4 + 2 * SIGNEX32_BITS(c, 0, 8));
             }
             }
         }
@@ -696,15 +738,15 @@ static u32 Disassemble_thumb(u32 code, u8 str[STRING_LENGTH], u32 it, const u8* 
             {
                 if (FormatStringRegisterList_thumb(reglist, registers, ""))
                 {
-                    if (BITS(registers, rn, 1)) sprintf(str, "ldmia r%u, {%s}", rn, reglist); //no '!' because rn is also in registers
-                    else sprintf(str, "ldmia r%u!, {%s}", rn, reglist);
+                    if (BITS(registers, rn, 1)) size = sprintf(str, "ldmia r%u, {%s}", rn, reglist); //no '!' because rn is also in registers
+                    else size = sprintf(str, "ldmia r%u!, {%s}", rn, reglist);
                 }
             }
             else //STMIA (STMEA)
             {
                 if (FormatStringRegisterList_thumb(reglist, registers, ""))
                 {
-                    sprintf(str, "stmia r%u!, {%s}", rn, reglist);
+                    size = sprintf(str, "stmia r%u!, {%s}", rn, reglist);
                 }
             }
         }
@@ -717,7 +759,7 @@ static u32 Disassemble_thumb(u32 code, u8 str[STRING_LENGTH], u32 it, const u8* 
         {
         case 0:
         {
-            sprintf(str, "b #%X", 4 + 2 * SIGNEX32_BITS(c, 0, 11)); //11 bits to signed 32 bits
+            size = sprintf(str, "b #%X", 4 + 2 * SIGNEX32_BITS(c, 0, 11)); //11 bits to signed 32 bits
             break;
         }
         //case 1: break; //undefined on first pass
@@ -734,7 +776,7 @@ static u32 Disassemble_thumb(u32 code, u8 str[STRING_LENGTH], u32 it, const u8* 
                     {
                         thumb_size++;
                         u32 ofs = ((BITS((code & 0xffff), 0, 10) << 10) | (BITS(c, 1, 10))) << 2;
-                        sprintf(str, "blx #%X", 4 + SIGNEX32_VAL(ofs, 22));
+                        size = sprintf(str, "blx #%X", 4 + SIGNEX32_VAL(ofs, 22));
                     }
                     break;
                 }
@@ -743,7 +785,7 @@ static u32 Disassemble_thumb(u32 code, u8 str[STRING_LENGTH], u32 it, const u8* 
                 {
                     thumb_size++;
                     u32 ofs = ((BITS((code & 0xffff), 0, 10) << 11) | (BITS(c, 0, 11))) << 1;
-                    sprintf(str, "bl #%X", 4 + (int)SIGNEX32_VAL(ofs, 22));
+                    size = sprintf(str, "bl #%X", 4 + (int)SIGNEX32_VAL(ofs, 22));
                     break;
                 }
                 }
@@ -759,19 +801,22 @@ static u32 Disassemble_thumb(u32 code, u8 str[STRING_LENGTH], u32 it, const u8* 
         debug_na_count++;
         sprintf(str, "n/a");
     }
+    else
+    {
+        CheckSpecialRegister(str, size); //formatting
+    }
     return thumb_size;
 }
 
 static void Disassemble_arm(u32 code, u8 str[STRING_LENGTH], ARMARCH av) {
     /**/
+    //Reference: page 68 of 811 from the ARM Architecture reference manual june 2000 edition
     //only supports ARMv5
     //todo: extra caution for UNPREDICTABLE instructions, need to remove them? or decode regardless?
 
+    int size = 0; //return value of sprintf to be passed to CheckSpecialRegister
     u32 c = code; //alias
-
-    //Page 68 of 811 from the ARM Architecture reference manual june 2000 edition
-
-    u8 cond = BITS(c, 28, 4);
+    u8 cond = BITS(c, 28, 4); //condition bits
 
     switch (BITS(c, 25, 3))
     {
@@ -794,24 +839,24 @@ static void Disassemble_arm(u32 code, u8 str[STRING_LENGTH], ARMARCH av) {
                         u8* s = BITS(c, 20, 1) ? "s" : "";
                         if (BITS(c, 21, 1)) //MLA
                         {
-                            sprintf(str, "mla%s%s r%u, r%u, r%u, r%u", s, Conditions[cond], rd, rm, rs, rn);
+                            size = sprintf(str, "mla%s%s r%u, r%u, r%u, r%u", s, Conditions[cond], rd, rm, rs, rn);
                         }
                         else //MUL
                         {
                             if (rn) break; //Should-Be-Zero
-                            sprintf(str, "mul%s%s r%u, r%u, r%u", s, Conditions[cond], rd, rm, rs);
+                            size = sprintf(str, "mul%s%s r%u, r%u, r%u", s, Conditions[cond], rd, rm, rs);
                         }
                     }
                     else if (BITS(c, 23, 1)) //Multiply (accumulate) long
                     {
                         u8* s = BITS(c, 20, 1) ? "s" : "";
-                        sprintf(str, "%s%s%s r%u, r%u, r%u, r%u", MultiplyLong[BITS(c, 21, 2)], s, Conditions[cond], BITS(c, 12, 4), BITS(c, 16, 4), BITS(c, 0, 4), BITS(c, 8, 4));
+                        size = sprintf(str, "%s%s%s r%u, r%u, r%u, r%u", MultiplyLong[BITS(c, 21, 2)], s, Conditions[cond], BITS(c, 12, 4), BITS(c, 16, 4), BITS(c, 0, 4), BITS(c, 8, 4));
                     }
                     else //Swap/swap byte (SWP, SWPB)
                     {
                         if (BITS(c, 8, 4)) break; //Should-Be-Zero
                         u8* b = BITS(c, 22, 1) ? "b" : ""; //byte or no
-                        sprintf(str, "swp%s%s r%u, r%u, [r%u]", b, Conditions[cond], BITS(c, 12, 4), BITS(c, 0, 4), BITS(c, 16, 4));
+                        size = sprintf(str, "swp%s%s r%u, r%u, [r%u]", b, Conditions[cond], BITS(c, 12, 4), BITS(c, 0, 4), BITS(c, 16, 4));
                     }
                 }
                 else
@@ -842,7 +887,6 @@ static void Disassemble_arm(u32 code, u8 str[STRING_LENGTH], ARMARCH av) {
             {
                 if (BITS(c, 23, 2) == 2 && !BITS(c, 20, 1)) //Miscellanous instructions, see fig 3-3
                 {
-                    //caution: bit 7 can be 1, relocate this branch!
                     //Branch/exchange instruction set
                     //Count leading zeroes
                     //Branch and link/exchange instruction set
@@ -865,40 +909,84 @@ static void Disassemble_arm(u32 code, u8 str[STRING_LENGTH], ARMARCH av) {
                     case 10: //CMP
                     case 11: //CMN
                     {
-                        sprintf(str, "%s%s r%u, r%u, %s r%u", DataProcessing_arm[op], Conditions[cond], rn, rm, Shifters[shift], rs);
+                        size = sprintf(str, "%s%s r%u, r%u, %s r%u", DataProcessing_arm[op], Conditions[cond], rn, rm, Shifters[shift], rs);
                         break;
                     }
                     case 13: //MOV
                     case 15: //MVN
                     {
-                        sprintf(str, "%s%s%s r%u, r%u, %s r%u", DataProcessing_arm[op], s, Conditions[cond], rd, rm, Shifters[shift], rs);
+                        size = sprintf(str, "%s%s%s r%u, r%u, %s r%u", DataProcessing_arm[op], s, Conditions[cond], rd, rm, Shifters[shift], rs);
                         break;
                     }
                     default:
                     {
-                        sprintf(str, "%s%s%s r%u, r%u, %s r%u", DataProcessing_arm[op], s, Conditions[cond], rd, rm, Shifters[shift], rs);
+                        size = sprintf(str, "%s%s%s r%u, r%u, %s r%u", DataProcessing_arm[op], s, Conditions[cond], rd, rm, Shifters[shift], rs);
                     }
                     }
                 }
             }
         }
-        else
+        else //bit 4 == 0
         {
             if (BITS(c, 23, 2) == 2 && !BITS(c, 20, 1)) //Miscellanous instructions, see fig 3-3
             {
-                if (!BITS(c, 0, 12) && BITS(c, 16, 4) == 15) //Move status reg to reg (MRS)
+                if (BITS(c, 7, 1)) //Enhanced DSP multiplies -todo
                 {
-                    //note: if Rd == PC, UNPREDICTABLE
-                    u8 sreg = BITS(c, 22, 1) ? 's' : 'c'; //SPSR (1) or CPSR (0)
-                    sprintf(str, "mrs%s r%u, %cpsr", Conditions[cond], BITS(c, 12, 4), sreg);
+                    //note: PC for any register is UNPREDICTABLE
+                    u8 rm = BITS(c, 0, 4);
+                    u8* x = BITS(c, 5, 1) ? "t" : "b";
+                    u8* y = BITS(c, 6, 1) ? "t" : "b";
+                    u8 rs = BITS(c, 8, 4);
+                    u8 rn_rdlo = BITS(c, 12, 4);
+                    u8 rd_rdhi = BITS(c, 16, 4);
+                    u8 op = BITS(c, 21, 2);
+                    switch (op)
+                    {
+                    case 0: //SMLA
+                    {
+                        size = sprintf(str, "%s%s%s%s r%u, r%u, r%u, r%u", DSP_Multiplies[op], x, y, Conditions[cond], rd_rdhi, rm, rs, rn_rdlo);
+                        break;
+                    }
+                    case 1: //SMLAW, SMULW
+                    {
+                        if (BITS(c, 5, 1)) //SMULW
+                        {
+                            if (rn_rdlo) break; //Should-Be-Zero 
+                            size = sprintf(str, "smulw%s%s r%u, r%u, r%u", y, Conditions[cond], rd_rdhi, rm, rs);
+                        }
+                        else //SMLAW
+                        {
+                            size = sprintf(str, "smlaw%s%s r%u, r%u, r%u, r%u", y, Conditions[cond], rd_rdhi, rm, rs, rn_rdlo);
+                        }
+                        break;
+                    }
+                    case 2: //SMLAL
+                    {
+                        size = sprintf(str, "%s%s%s%s r%u, r%u, r%u, r%u", DSP_Multiplies[op], x, y, Conditions[cond], rn_rdlo, rd_rdhi, rm, rs);
+                        break;
+                    }
+                    case 3: //SMUL
+                    {
+                        if (rn_rdlo) break; //Should-Be-Zero
+                        size = sprintf(str, "%s%s%s%s r%u, r%u, r%u", DSP_Multiplies[op], x, y, Conditions[cond], rd_rdhi, rm, rs);
+                        break;
+                    }
+                    }
                 }
-                else if (BITS(c, 12, 4) == 15 && !BITS(c, 4, 8) && BITS(c, 21, 1)) //Move reg to status reg (MSR register)
+                else
                 {
-                    u8 sreg = BITS(c, 22, 1) ? 's' : 'c'; //SPSR (1) or CPSR (0)
-                    sprintf(str, "msr%s %cpsr_%s, r%u", Conditions[cond], sreg, MSR_cxsf[BITS(c, 16, 4)], BITS(c, 0, 4));
+                    if (!BITS(c, 0, 12) && BITS(c, 16, 4) == 15) //Move status reg to reg (MRS)
+                    {
+                        //note: if Rd == PC, UNPREDICTABLE
+                        u8 sreg = BITS(c, 22, 1) ? 's' : 'c'; //SPSR (1) or CPSR (0)
+                        size = sprintf(str, "mrs%s r%u, %cpsr", Conditions[cond], BITS(c, 12, 4), sreg);
+                    }
+                    else if (BITS(c, 12, 4) == 15 && !BITS(c, 4, 8) && BITS(c, 21, 1)) //Move reg to status reg (MSR register)
+                    {
+                        u8 sreg = BITS(c, 22, 1) ? 's' : 'c'; //SPSR (1) or CPSR (0)
+                        size = sprintf(str, "msr%s %cpsr_%s, r%u", Conditions[cond], sreg, MSR_cxsf[BITS(c, 16, 4)], BITS(c, 0, 4));
+                    }
                 }
-                //else?
-                //Enhanced DSP multiplies (SMUL, SMULW, SMLAW, SMLAL (B | T) depending on <y>)
             }
             else //Data processing immediate shift
             {
@@ -921,18 +1009,18 @@ static void Disassemble_arm(u32 code, u8 str[STRING_LENGTH], ARMARCH av) {
                 case 10: //CMP
                 case 11: //CMN
                 {
-                    sprintf(str, "%s%s r%u, r%u, %s", DataProcessing_arm[op], Conditions[cond], rn, rm, sstr);
+                    size = sprintf(str, "%s%s r%u, r%u, %s", DataProcessing_arm[op], Conditions[cond], rn, rm, sstr);
                     break;
                 }
                 case 13: //MOV
                 case 15: //MVN
                 {
-                    sprintf(str, "%s%s%s r%u, r%u, %s", DataProcessing_arm[op], s, Conditions[cond], rd, rm, sstr);
+                    size = sprintf(str, "%s%s%s r%u, r%u, %s", DataProcessing_arm[op], s, Conditions[cond], rd, rm, sstr);
                     break;
                 }
                 default:
                 {
-                    sprintf(str, "%s%s%s r%u, r%u, r%u, %s", DataProcessing_arm[op], s, Conditions[cond], rd, rn, rm, sstr);
+                    size = sprintf(str, "%s%s%s r%u, r%u, r%u, %s", DataProcessing_arm[op], s, Conditions[cond], rd, rn, rm, sstr);
                 }
                 }
             }
@@ -947,7 +1035,7 @@ static void Disassemble_arm(u32 code, u8 str[STRING_LENGTH], ARMARCH av) {
         if (BITS(c, 12, 4) == 15 && !BITS(c, 20, 1)) //MSR immediate
         {
             u8 sreg = BITS(c, 22, 1) ? 's' : 'c'; //SPSR (1) or CPSR (0)
-            sprintf(str, "msr%s %cpsr_%s, #%X", Conditions[cond], sreg, MSR_cxsf[BITS(c, 16, 4)], imm);
+            size = sprintf(str, "msr%s %cpsr_%s, #%X", Conditions[cond], sreg, MSR_cxsf[BITS(c, 16, 4)], imm);
         }
         else //Data processing immediate
         {
@@ -963,20 +1051,20 @@ static void Disassemble_arm(u32 code, u8 str[STRING_LENGTH], ARMARCH av) {
             case 11: //CMN
                 //always update the condition codes: <op>{<cond>} <Rn>, <shift>
             {
-                sprintf(str, "%s%s r%u, #%X", DataProcessing_arm[op], Conditions[cond], rn, imm);
+                size = sprintf(str, "%s%s r%u, #%X", DataProcessing_arm[op], Conditions[cond], rn, imm);
                 break;
             }
             case 13: //MOV
             case 15: //MVN
                 //only one source operand: <op>{<cond>}{S} <Rd>, <shift>
             {
-                sprintf(str, "%s%s%s r%u, #%X", DataProcessing_arm[op], s, Conditions[cond], rd, imm);
+                size = sprintf(str, "%s%s%s r%u, #%X", DataProcessing_arm[op], s, Conditions[cond], rd, imm);
                 break;
             }
 
             default: //others: <op>{<cond>}{S} <Rd>, <Rn>, <shift>
             {
-                sprintf(str, "%s%s%s r%u, r%u, #%X", DataProcessing_arm[op], s, Conditions[cond], rd, rn, imm);
+                size = sprintf(str, "%s%s%s r%u, r%u, #%X", DataProcessing_arm[op], s, Conditions[cond], rd, rn, imm);
             }
             }
         }
@@ -995,12 +1083,12 @@ static void Disassemble_arm(u32 code, u8 str[STRING_LENGTH], ARMARCH av) {
         if (BITS(c, 24, 1)) //offset or pre-indexed
         {
             u8* w = BITS(c, 21, 1) ? "!" : ""; //pre-indexed if 1
-            sprintf(str, "%s%s%s r%u, [r%u, #%s%X]%s", ls, b, Conditions[cond], rd, rn, sign, imm, w);
+            size = sprintf(str, "%s%s%s r%u, [r%u, #%s%X]%s", ls, b, Conditions[cond], rd, rn, sign, imm, w);
         }
         else //post-indexed
         {
             u8* w = BITS(c, 21, 1) ? "t" : ""; //user mode
-            sprintf(str, "%s%s%s%s r%u, [r%u], #%s%X", ls, b, w, Conditions[cond], rd, rn, sign, imm);
+            size = sprintf(str, "%s%s%s%s r%u, [r%u], #%s%X", ls, b, w, Conditions[cond], rd, rn, sign, imm);
         }
         break;
     }
@@ -1025,12 +1113,12 @@ static void Disassemble_arm(u32 code, u8 str[STRING_LENGTH], ARMARCH av) {
         if (BITS(c, 24, 1)) //offset or pre-indexed
         {
             u8* w = BITS(c, 21, 1) ? "!" : ""; //pre-indexed if 1
-            sprintf(str, "%s%s%s r%u, [r%u, %sr%u, %s]%s", ls, b, Conditions[cond], rd, rn, sign, rm, sstr, w);
+            size = sprintf(str, "%s%s%s r%u, [r%u, %sr%u, %s]%s", ls, b, Conditions[cond], rd, rn, sign, rm, sstr, w);
         }
         else //post-indexed
         {
             u8* w = BITS(c, 21, 1) ? "t" : ""; //user mode
-            sprintf(str, "%s%s%s%s r%u, [r%u], %sr%u, %s", ls, b, w, Conditions[cond], rd, rn, sign, rm, sstr);
+            size = sprintf(str, "%s%s%s%s r%u, [r%u], %sr%u, %s", ls, b, w, Conditions[cond], rd, rn, sign, rm, sstr);
         }
         break;
     }
@@ -1045,11 +1133,11 @@ static void Disassemble_arm(u32 code, u8 str[STRING_LENGTH], ARMARCH av) {
         u8 am = BITS(c, 23, 2); //PU bits
         if (BITS(c, 20, 1)) //LDM
         {
-            sprintf(str, "ldm%s%s r%u%s, {%s}%s", Conditions[cond], AddressingModes[am], rn, w, reglist, s);
+            size = sprintf(str, "ldm%s%s r%u%s, {%s}%s", Conditions[cond], AddressingModes[am], rn, w, reglist, s);
         }
         else //STM
         {
-            sprintf(str, "stm%s%s r%u%s, {%s}%s", Conditions[cond], AddressingModes[am], rn, w, reglist, s);
+            size = sprintf(str, "stm%s%s r%u%s, {%s}%s", Conditions[cond], AddressingModes[am], rn, w, reglist, s);
         }
         break;
     }
@@ -1057,17 +1145,17 @@ static void Disassemble_arm(u32 code, u8 str[STRING_LENGTH], ARMARCH av) {
     {
         if (cond == NV) //BLX
         {
-            sprintf(str, "blx #%X", 8 + 4 * SIGNEX32_BITS(c, 0, 24) + 2 * BITS(c, 24, 1));
+            size = sprintf(str, "blx #%X", 8 + 4 * SIGNEX32_BITS(c, 0, 24) + 2 * BITS(c, 24, 1));
         }
         else //Branch and branch with link
         {
             if (BITS(c, 24, 1)) //BL
             {
-                sprintf(str, "bl #%X", 8 + 4 * SIGNEX32_BITS(c, 0, 24));
+                size = sprintf(str, "bl #%X", 8 + 4 * SIGNEX32_BITS(c, 0, 24));
             }
             else //B
             {
-                sprintf(str, "b #%X", 8 + 4 * SIGNEX32_BITS(c, 0, 24));
+                size = sprintf(str, "b #%X", 8 + 4 * SIGNEX32_BITS(c, 0, 24));
             }
         }
         break;
@@ -1077,39 +1165,32 @@ static void Disassemble_arm(u32 code, u8 str[STRING_LENGTH], ARMARCH av) {
         //if (cond == NV) break; //only unpredictable prior to ARMv5
         //note: if PC is specified for Rn or Rd, UNPREDICTABLE
         u8* ls = BITS(c, 20, 1) ? "mrrc" : "mcrr";
-        sprintf(str, "%s%s p%u, #%X, r%u, r%u, c%u", ls, Conditions[cond], BITS(c, 8, 4), BITS(c, 4, 4), BITS(c, 12, 4), BITS(c, 16, 4), BITS(c, 0, 4));
+        size = sprintf(str, "%s%s p%u, #%X, r%u, r%u, c%u", ls, Conditions[cond], BITS(c, 8, 4), BITS(c, 4, 4), BITS(c, 12, 4), BITS(c, 16, 4), BITS(c, 0, 4));
         break;
     }
-    case 7: //todo
+    case 7: //Software Interrupt, Coprocessor register transfer, Coprocessor data processing
     {
-        if (BITS(c, 24, 1)) //Software Interrupt (SWI)
+        if (BITS(c, 24, 1)) //SWI
         {
             if (cond == NV) break;
-            sprintf(str, "swi%s #%X", Conditions[cond], BITS(c, 0, 24));
+            size = sprintf(str, "swi%s #%X", Conditions[cond], BITS(c, 0, 24));
         }
         else
         {
-            //if (cond == NV) break; //only unpredictable prior to ARMv5
-            if (BITS(c, 4, 1)) //Coprocessor register transfer
+            u8 crn = BITS(c, 16, 4);
+            u8 p = BITS(c, 8, 4);
+            u8 rd_crd = BITS(c, 12, 4);
+            u8 crm = BITS(c, 0, 4);
+            u8 op2 = BITS(c, 5, 3);
+            u8* str_cond = (cond == NV) ? "2" : Conditions[cond]; //suffix
+            if (BITS(c, 4, 1)) //MCR, MRC
             {
-
+                u8* str_op = BITS(c, 20, 1) ? "mrc" : "mcr";
+                size = sprintf(str, "%s%s p%u, #%X, r%u, c%u, c%u, #%X", str_op, str_cond, p, BITS(c, 21, 3), rd_crd, crn, crm, op2);
             }
-            else //Coprocessor data processing
+            else //CDP
             {
-                u8 p = BITS(c, 8, 4);
-                u8 op1 = BITS(c, 20, 4);
-                u8 crd = BITS(c, 12, 4);
-                u8 crn = BITS(c, 16, 4);
-                u8 crm = BITS(c, 0, 4);
-                u8 op2 = BITS(c, 5, 3);
-                if (cond == NV) //CDP2
-                {
-                    sprintf(str, "cdp2 p%u, #%X, c%u, c%u, c%u, #%X", p, op1, crd, crn, crm, op2); //no condition suffix for cdp2
-                }
-                else //CDP
-                {
-                    sprintf(str, "cdp%s p%u, #%X, c%u, c%u, c%u, #%X", Conditions[cond], p, op1, crd, crn, crm, op2);
-                }
+                size = sprintf(str, "cdp%s p%u, #%X, c%u, c%u, c%u, #%X", str_cond, p, BITS(c, 20, 4), rd_crd, crn, crm, op2); //no condition suffix for cdp2
             }
         }
         break;
@@ -1119,44 +1200,11 @@ static void Disassemble_arm(u32 code, u8 str[STRING_LENGTH], ARMARCH av) {
     if (!str[0]) //in case nothing was written to it
     {
         debug_na_count++;
-        sprintf(str, "n/a");
+        size = sprintf(str, "n/a");
     }
-}
-
-static void SubstituteSubString(u8 dst[STRING_LENGTH], u32 index, const u8* sub, u32 size) {
-    /* Insert sub string of length size (< STRING_LENGTH) at dst[index] */
-    u8 tmp[STRING_LENGTH] = { 0 }; //zinit
-    memcpy(&tmp, sub, size); //init
-    memcpy(&tmp[size], &dst[index + size + 1], STRING_LENGTH - index - size - 1); //save
-    memcpy(&dst[index], tmp, STRING_LENGTH - index - 1); //restore
-}
-
-static void CheckSpecialRegister(u8 str[STRING_LENGTH]) {
-    /* Replace special registers by their common names */
-    //(r12->ip), r13->sp, r14->lr, r15->pc
-    for (u32 i = 0; i < STRING_LENGTH; i++)
+    else
     {
-        if (str[i] == 'r')
-        {
-            switch (*(u16*)&str[i + 1])
-            {
-            case 0x3331: //"13"
-            {
-                SubstituteSubString(str, i, "sp", sizeof("sp") - 1);
-                break;
-            }
-            case 0x3431: //"14"
-            {
-                SubstituteSubString(str, i, "lr", sizeof("lr") - 1);
-                break;
-            }
-            case 0x3531: //"15"
-            {
-                SubstituteSubString(str, i, "pc", sizeof("pc") - 1);
-                break;
-            }
-            }
-        }
+        CheckSpecialRegister(str, size); //formatting of SP, LR, PC
     }
 }
 
@@ -1176,7 +1224,6 @@ static void Debug_DumpAllInstructions(void) {
     {
         u8 str[STRING_LENGTH] = { 0 };
         Disassemble_thumb(code, str, 0, "", ARMv5TE);
-        CheckSpecialRegister(str);
         fprintf(fp, "%04X %s\n", code, str);
     }
 
@@ -1212,14 +1259,12 @@ static int DisassembleFile(FILE* in, FILE* out, FILERANGE* range) {
         fread(&code, 4, 1, in); //prefetch 32 bits
         if (Disassemble_thumb(code, str, 0, "", ARMv5TE)) //32-bit
         {
-            CheckSpecialRegister(str);
             fprintf(out, "%08X: %08X %s\n", range->start + (i - range->start) * 2, code, str);
             i++;
         }
         else //16-bit
         {
             fseek(in, -2, SEEK_CUR); //go back 2 bytes
-            CheckSpecialRegister(str);
             fprintf(out, "%08X: %04X     %s\n", range->start + (i - range->start) * 2, code & 0xffff, str);
         }
     }
@@ -1303,11 +1348,14 @@ static int IfValidRangeSet(FILERANGE* range, u8* r) {
 
 int main(int argc, char* argv[]) {
 
+    clock_t start = clock();
+
+
 #ifdef DEBUG
     //Debug_DumpAllInstructions();
-    Debug_DisassembleCode_arm(0x1effffef);
+    Debug_DisassembleCode_arm(0xe16f0f8f);
     //u32 i = 0;
-    //while (++i)
+    //while (++i!=0xffffff) //4654 ms with variable size, 5137 ms with size == 64
     //{
     //    Debug_DisassembleCode_arm(i);
     //}
@@ -1315,6 +1363,7 @@ int main(int argc, char* argv[]) {
 
 #else
 
+    //todo: ask for ARM or THUMB mode, or auto detect, or do both
     u8* filename_in = argv[1];
     u8* filename_out = NULL;
     FILE* file_in = NULL;
@@ -1360,7 +1409,7 @@ int main(int argc, char* argv[]) {
             else
             {
                 printf("ERROR: DisassembleFile failed.\n");
-            }
+}
             fclose(file_in);
         }
         return 0;
@@ -1368,6 +1417,8 @@ int main(int argc, char* argv[]) {
 
     printf("Nothing was done\n");
 #endif // DEBUG
+
+    printf("Completion time: %.0f ms\n", (double)clock() - (double)start);
 
     return 0;
 }
