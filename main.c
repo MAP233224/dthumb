@@ -820,6 +820,8 @@ static void Disassemble_arm(u32 code, u8 str[STRING_LENGTH], ARMARCH av) {
     u32 c = code; //alias
     u8 cond = BITS(c, 28, 4); //condition bits
 
+    //todo: check unconditional instructions first to avoid putting a check later at each stage
+
     switch (BITS(c, 25, 3))
     {
     case 0: //Data processing, DSP instructions, ...
@@ -1195,13 +1197,49 @@ static void Disassemble_arm(u32 code, u8 str[STRING_LENGTH], ARMARCH av) {
         }
         break;
     }
-    case 6: //todo: Coprocessor load/store and double register transfers (MCRR, MRRC)
+    case 6: //todo: Coprocessor load/store, Double register transfers 
     {
-        //todo: LDC, STC
         //if (cond == NV) break; //only unpredictable prior to ARMv5
-        //note: if PC is specified for Rn or Rd, UNPREDICTABLE
-        u8* ls = BITS(c, 20, 1) ? "mrrc" : "mcrr";
-        size = sprintf(str, "%s%s p%u, #%X, r%u, r%u, c%u", ls, Conditions[cond], BITS(c, 8, 4), BITS(c, 4, 4), BITS(c, 12, 4), BITS(c, 16, 4), BITS(c, 0, 4));
+        if (BITS(c, 21, 4) == 2) //MCRR, MRRC
+        {
+            //note: if PC is specified for Rn or Rd, UNPREDICTABLE
+            u8* op = BITS(c, 20, 1) ? "mrrc" : "mcrr";
+            size = sprintf(str, "%s%s p%u, #%X, r%u, r%u, c%u", op, Conditions[cond], BITS(c, 8, 4), BITS(c, 4, 4), BITS(c, 12, 4), BITS(c, 16, 4), BITS(c, 0, 4));
+        }
+        else //LDC, STD -todo
+        {
+            u8* ls = BITS(c, 20, 1) ? "ldc" : "stc";
+            u8* str_cond = (cond == NV) ? "2" : Conditions[cond]; //LDC2, STC2
+            u8* l = BITS(c, 22, 1) ? "l" : ""; //long
+            u8 ofs_opt = BITS(c, 0, 8);
+            u8 cp_num = BITS(c, 8, 4);
+            u8 crd = BITS(c, 12, 4);
+            u8 rn = BITS(c, 16, 4);
+            u8* sign = BITS(c, 23, 1) ? "+" : "-";
+            switch ((2 * BITS(c, 24, 1)) | BITS(c, 21, 1)) //(p*2) | w
+            {
+            case 0: //p==0, w==0 //unindexed: [<Rn>], <option>
+            {
+                //size = sprintf(str, "%s%s%s");
+                break;
+            }
+            case 1: //p==0, w==1 //post indexed: [<Rn>], #+/-<offset_8>*4
+            {
+
+                break;
+            }
+            case 2: //p==1, w==0 //immediate offset: [<Rn>, #+/-<offset_8>*4]
+            {
+
+                break;
+            }
+            case 3: //p==1, w==1 //pre indexed: [<Rn>, #+/-<offset_8>*4]!
+            {
+
+                break;
+            }
+            }
+        }
         break;
     }
     case 7: //Software Interrupt, Coprocessor register transfer, Coprocessor data processing
@@ -1278,7 +1316,7 @@ static void Debug_DisassembleCode_arm(u32 c) {
     /* Debug: disassemble a single ARM instruction from the ARMv5TE architecture */
     u8 s[STRING_LENGTH] = { 0 };
     Disassemble_arm(c, s, ARMv5TE);
-    printf("%08X -> %s\n", c, s);
+    //printf("%08X -> %s\n", c, s);
 }
 
 static void Debug_DumpAllInstructions(void) {
@@ -1418,12 +1456,12 @@ int main(int argc, char* argv[]) {
 
 #ifdef DEBUG
     //Debug_DumpAllInstructions();
-    Debug_DisassembleCode_arm(0xf5d5f000);
-    //u32 i = 0;
-    //while (++i!=0xffffff) //4654 ms with variable size, 5137 ms with size == 64
-    //{
-    //    Debug_DisassembleCode_arm(i);
-    //}
+    //Debug_DisassembleCode_arm(0xf5d5f000);
+    u32 i = 0;
+    while (++i != 0xffffff) //4654 ms with variable size, 5137 ms with size == 64
+    {
+        Debug_DisassembleCode_arm(i);
+    }
     //printf("%u n/a instructions, %.2f%% complete.\n", debug_na_count, 100 - (100 * (float)debug_na_count / (float)0x100000000));
 
 #else
@@ -1476,9 +1514,9 @@ int main(int argc, char* argv[]) {
                 printf("ERROR: DisassembleFile failed.\n");
             }
             fclose(file_in);
-}
+        }
         return 0;
-}
+    }
 
     printf("Nothing was done\n");
 #endif // DEBUG
