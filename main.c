@@ -822,7 +822,7 @@ static void Disassemble_arm(u32 code, u8 str[STRING_LENGTH], ARMARCH av) {
 
     switch (BITS(c, 25, 3))
     {
-    case 0: //todo
+    case 0: //Data processing, DSP instructions, ...
     {
         if (cond == NV) break; //undefined
         if (BITS(c, 4, 1))
@@ -885,7 +885,7 @@ static void Disassemble_arm(u32 code, u8 str[STRING_LENGTH], ARMARCH av) {
                     }
                 }
             }
-            else //todo
+            else
             {
                 if (BITS(c, 23, 2) == 2 && !BITS(c, 20, 1)) //Miscellanous instructions, see fig 3-3
                 {
@@ -1195,8 +1195,9 @@ static void Disassemble_arm(u32 code, u8 str[STRING_LENGTH], ARMARCH av) {
         }
         break;
     }
-    case 6: //Coprocessor load/store and double register transfers (MCRR, MRRC)
+    case 6: //todo: Coprocessor load/store and double register transfers (MCRR, MRRC)
     {
+        //todo: LDC, STC
         //if (cond == NV) break; //only unpredictable prior to ARMv5
         //note: if PC is specified for Rn or Rd, UNPREDICTABLE
         u8* ls = BITS(c, 20, 1) ? "mrrc" : "mcrr";
@@ -1232,6 +1233,14 @@ static void Disassemble_arm(u32 code, u8 str[STRING_LENGTH], ARMARCH av) {
     }
     //also: unconditionnal instructions if bits 28 to 31 are 1111
     }
+
+    if ((c & 0xFD70F000) == 0xFD70F000)
+    {
+        //todo: PLD
+        //bit-pattern: 1111 01x1 x101 xxxx 1111 xxxx xxxx xxxx
+        //data mask  : 1111 1101 0111 0000 1111 0000 0000 0000 
+    }
+
     if (!str[0]) //in case nothing was written to it
     {
         debug_na_count++;
@@ -1378,7 +1387,7 @@ static int IfValidRangeSet(FILERANGE* range, u8* r) {
 
 /* ENTRY POINT */
 
-//#define DEBUG //comment out to disable debug ifdefs
+#define DEBUG //comment out to disable debug ifdefs
 
 int main(int argc, char* argv[]) {
 
@@ -1439,7 +1448,7 @@ int main(int argc, char* argv[]) {
             if (DisassembleFile(file_in, stdout, &filerange))
             {
                 printf("Successfully disassembled \"%s\".\n", filename_in);
-            }
+}
             else
             {
                 printf("ERROR: DisassembleFile failed.\n");
