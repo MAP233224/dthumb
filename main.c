@@ -1231,20 +1231,42 @@ static void Disassemble_arm(u32 code, u8 str[STRING_LENGTH], ARMARCH av) {
         }
         break;
     }
-    //also: unconditionnal instructions if bits 28 to 31 are 1111
     }
 
-    if ((c & 0xFD70F000) == 0xFD70F000)
+    //also: unconditionnal instructions if bits 28 to 31 are 1111
+    if (!str[0] && (c & 0xFD70F000) == 0xF550F000) //Cache preload (PLD)
     {
-        //todo: PLD
+        //todo: placing it here is wasteful, find a workaround
         //bit-pattern: 1111 01x1 x101 xxxx 1111 xxxx xxxx xxxx
-        //data mask  : 1111 1101 0111 0000 1111 0000 0000 0000 
+        //data mask  : 1111 1101 0111 0000 1111 0000 0000 0000
+        //inst. mask : 1111 0101 0101 0000 1111 0000 0000 0000
+        //note: only offset addressing modes
+        // [<Rn>, #+/-<offset_12>] //immediate
+        // [<Rn>, +/-<Rm>] //register
+        // [<Rn>, +/-<Rm>, <shift> #<shift_imm>] //scaled register
+        u8 rn = BITS(c, 16, 4);
+        if (BITS(c, 25, 1)) //(scaled) register
+        {
+            u8 rm = BITS(c, 0, 4);
+            u8 shift = BITS(c, 5, 2);
+            u16 shift_imm = BITS(c, 7, 5);
+            u8* sign = BITS(c, 23, 1) ? "" : "-";
+            u8 sstr[STRING_LENGTH] = "rrx"; //default, overwrite if incorrect
+            if ((shift == 1 || shift == 2) && !shift_imm) shift_imm = 32; //0~31 for LSL, 1~32 for LSR, ASR and ROR, always 0 for RRX
+            if (!(shift == 3 && !shift_imm)) sprintf(sstr, "%s #%u", Shifters[shift], shift_imm);
+            size = sprintf(str, "pld [r%u, %sr%u, %s]", rn, sign, rm, sstr);
+        }
+        else //immediate
+        {
+            u8* sign = BITS(c, 23, 1) ? "+" : "-";
+            size = sprintf(str, "pld [r%u, #%s%X]", rn, sign, BITS(c, 0, 12));
+        }
     }
 
     if (!str[0]) //in case nothing was written to it
     {
         debug_na_count++;
-        size = sprintf(str, "n/a");
+        sprintf(str, "n/a"); //don't need to get size, no special register formatting
     }
     else
     {
@@ -1396,7 +1418,7 @@ int main(int argc, char* argv[]) {
 
 #ifdef DEBUG
     //Debug_DumpAllInstructions();
-    Debug_DisassembleCode_arm(0x114de05e);
+    Debug_DisassembleCode_arm(0xf5d5f000);
     //u32 i = 0;
     //while (++i!=0xffffff) //4654 ms with variable size, 5137 ms with size == 64
     //{
@@ -1448,15 +1470,15 @@ int main(int argc, char* argv[]) {
             if (DisassembleFile(file_in, stdout, &filerange))
             {
                 printf("Successfully disassembled \"%s\".\n", filename_in);
-}
+            }
             else
             {
                 printf("ERROR: DisassembleFile failed.\n");
             }
             fclose(file_in);
-        }
+}
         return 0;
-    }
+}
 
     printf("Nothing was done\n");
 #endif // DEBUG
