@@ -1,5 +1,5 @@
-//Nintendo DS CPU: ARM946E-S (T, E, M variants included)
-//Architecture: ARMv5TE
+//Target CPU: ARM946E-S (Nintendo DS main CPU)
+//Target Architecture: ARMv5TE
 //ARM version: 5
 //THUMB version: 2
 
@@ -7,7 +7,7 @@
 /*
 ADC         Add with Carry
 ADD         Add
-AND         Bitwise AND
+AND         Logical AND
 B           Branch
 BL          Branch and Link
 BIC         Bit Clear
@@ -18,7 +18,7 @@ CDP         Coprocessor Data Processing
 CLZ         Count Leading Zeros
 CMN         Compare Negative
 CMP         Compare
-EOR         Bitwise Exclusive OR
+EOR         Logical Exclusive OR
 LDC         Load Coprocessor
 LDM (3)     Load Multiple
 LDR         Load Register
@@ -36,7 +36,7 @@ MRS         Move PSR to General-purpose Register
 MSR         Move to Status Register from ARM Register
 MUL         Multiply
 MVN         Move Negative
-ORR         Bitwise OR
+ORR         Logical OR
 RSB         Reverse Substract
 RSC         Reverse Substract with Carry
 SBC         Substract with Carry
@@ -60,61 +60,61 @@ UMULL       Unsigned Multply Long
 
 //DSP enhanced (ARMv5TE exclusive)
 
-LDRD        ;Loads two words
-MCRR        ;Transfers two ARM register values to a coprocessor
-MRRC        ;Transfers values from a coprocessor to two ARM registers
-PLD         ;Cache Preload
-QADD        ;Performs a saturated integer addition
+LDRD        Load Register Dual
+MCRR        Move to Coprocessor from Registers
+MRRC        Move to Registers from Coprocessor
+PLD         Preload Data
+QADD        Saturating signed Add
 QDADD       ;Performs a saturated integer doubling of one operand followed by a saturated integer addition with the other operand
 QDSUB       ;Performs a saturated integer doubling of one operand followed by a saturated integer substraction from the other operand
-QSUB        ;Performs a saturated integer substraction
+QSUB        Saturating signed Subtraction
 SMLA        Signed Multiply Accumulate
 SMLAL       Signed Multiply Accumulate Long
 SMLAW       Signed Multiply Accumulate Word
 SMUL        Signed Multiply
 SMULW       Signed Multiply Word
-STRD        ;Stores two words
+STRD        Store Register Dual
 */
 
 /* Alphabetical list of THUMB instructions (number of variants) */
 /*
-ADC
-ADD (7)
-AND
-ASR (2)
-B (2)
-BIC
-BKPT
-BL
-BLX (2)
-BX
-CMN
-CMP (3)
-EOR
-LDMIA
-LDR (4)
-LDRB (2)
-LDRH (2)
-LDRSB
-LDRSH
-LSL (2)
-LSR (2)
-MOV (3)
-MUL
-MVN
-NEG
-ORR
-POP
-PUSH
-ROR
-SBC
-STMIA
-STR (3)
-STRB (2)
-STRH (2)
-SUB (4)
-SWI
-TST
+ADC         Add with Carry
+ADD (7)     Add
+AND         Logical AND
+ASR (2)     Arithmetic Shift Right
+B (2)       Branch
+BIC         Bit Clear
+BKPT        Breakpoint
+BL          Branch with Link
+BLX (2)     Branch with Link and Exchange
+BX          Branch and Exchange
+CMN         Compare Negative
+CMP (3)     Compare
+EOR         Logical Exclusive OR
+LDMIA       Load Multiple Increment After
+LDR (4)     Load Register
+LDRB (2)    Load Register Byte
+LDRH (2)    Load Register Halfword
+LDRSB       Load Register Signed Byte
+LDRSH       Load Register Signed Halfword
+LSL (2)     Logical Shift Left
+LSR (2)     Logical Shift Right
+MOV (3)     Move
+MUL         Multiply
+MVN         Move NOT
+NEG         Negate
+ORR         Logical OR
+POP         Pop Multiple Registers
+PUSH        Push Multiple Registers
+ROR         Rotate Right Register
+SBC         Substract with Carry
+STMIA       Store Multiple Increment After
+STR (3)     Store Register
+STRB (2)    Store Register Byte
+STRH (2)    Store Register Halfword
+SUB (4)     Substract
+SWI         Software Interrupt
+TST         Test
 */
 
 /* INCLUDES */
@@ -379,27 +379,29 @@ static u32 CountBits(u8 b) {
     return lut[b & 0x0f] + lut[b >> 4];
 }
 
-static int IfThen_imm_2(const u8* op, u8 str[STRING_LENGTH], u32 it, const u8* cond, u8 rm, u8 imm) {
+//todo: inline IfThen functions in Disassemble_thumb (no IT blocks in ARMv5TE)
+
+static int IfThen_imm_2(const u8* op, u8 str[STRING_LENGTH], u8 rm, u8 imm) {
     /* Formatting, return size of characters written by sprintf */
-    if (it) return sprintf(str, "%s%s r%u, #0x%X", op, cond, rm, imm);
+    //if (it) return sprintf(str, "%s%s r%u, #0x%X", op, cond, rm, imm);
     return sprintf(str, "%ss r%u, #0x%X", op, rm, imm);
 }
 
-static int IfThen_imm_3(const u8* op, u8 str[STRING_LENGTH], u32 it, const u8* cond, u8 rd, u8 rm, u8 imm) {
+static int IfThen_imm_3(const u8* op, u8 str[STRING_LENGTH], u8 rd, u8 rm, u8 imm) {
     /* Formatting, return size of characters written by sprintf */
-    if (it) return sprintf(str, "%s%s r%u, r%u, #0x%X", op, cond, rd, rm, imm);
+    //if (it) return sprintf(str, "%s%s r%u, r%u, #0x%X", op, cond, rd, rm, imm);
     return sprintf(str, "%ss r%u, r%u, #0x%X", op, rd, rm, imm);
 }
 
-static int IfThen_reg_2(const u8* op, u8 str[STRING_LENGTH], u32 it, const u8* cond, u8 rd, u8 rm) {
+static int IfThen_reg_2(const u8* op, u8 str[STRING_LENGTH], u8 rd, u8 rm) {
     /* Formatting, return size of characters written by sprintf */
-    if (it) return sprintf(str, "%s%s r%u, r%u", op, cond, rd, rm);
+    //if (it) return sprintf(str, "%s%s r%u, r%u", op, cond, rd, rm);
     return sprintf(str, "%ss r%u, r%u", op, rd, rm);
 }
 
-static int IfThen_reg_3(const u8* op, u8 str[STRING_LENGTH], u32 it, const u8* cond, u8 rd, u8 rm, u8 rn) {
+static int IfThen_reg_3(const u8* op, u8 str[STRING_LENGTH], u8 rd, u8 rm, u8 rn) {
     /* Formatting, return size of characters written by sprintf */
-    if (it) return sprintf(str, "%s%s r%u, r%u, r%u", op, cond, rd, rm, rn);
+    //if (it) return sprintf(str, "%s%s r%u, r%u, r%u", op, cond, rd, rm, rn);
     return sprintf(str, "%ss r%u, r%u, r%u", op, rd, rm, rn);
 }
 
@@ -441,7 +443,7 @@ static void FormatExtraLoadStore(u32 c, u8* str, u8 cond, const u8* op) {
     }
 }
 
-static u32 Disassemble_thumb(u32 code, u8 str[STRING_LENGTH], u32 it, const u8* cond, ARMARCH tv) {
+static u32 Disassemble_thumb(u32 code, u8 str[STRING_LENGTH], ARMARCH tv) {
     /* Convert a code into a string, return 0 if processed THUMB 16-bit, 1 if processed THUMB 32-bit  */
 
     u32 thumb_size = 0; //return value
@@ -460,7 +462,7 @@ static u32 Disassemble_thumb(u32 code, u8 str[STRING_LENGTH], u32 it, const u8* 
             {
                 if (BITS(c, 6, 5)) //LSL immediate
                 {
-                    IfThen_imm_3("lsl", str, it, cond, BITS(c, 0, 3), BITS(c, 3, 3), BITS(c, 6, 5));
+                    size = IfThen_imm_3("lsl", str, BITS(c, 0, 3), BITS(c, 3, 3), BITS(c, 6, 5));
                 }
                 else //MOV register
                 {
@@ -477,7 +479,7 @@ static u32 Disassemble_thumb(u32 code, u8 str[STRING_LENGTH], u32 it, const u8* 
         {
             if (tv >= ARMv5TE)
             {
-                IfThen_imm_3("lsr", str, it, cond, BITS(c, 0, 3), BITS(c, 3, 3), BITS(c, 6, 5));
+                size = IfThen_imm_3("lsr", str, BITS(c, 0, 3), BITS(c, 3, 3), BITS(c, 6, 5));
             }
             else //ARMv4T
             {
@@ -489,7 +491,7 @@ static u32 Disassemble_thumb(u32 code, u8 str[STRING_LENGTH], u32 it, const u8* 
         {
             if (tv >= ARMv5TE)
             {
-                IfThen_imm_3("asr", str, it, cond, BITS(c, 0, 3), BITS(c, 3, 3), BITS(c, 6, 5));
+                size = IfThen_imm_3("asr", str, BITS(c, 0, 3), BITS(c, 3, 3), BITS(c, 6, 5));
             }
             else //ARMv4T
             {
@@ -505,7 +507,7 @@ static u32 Disassemble_thumb(u32 code, u8 str[STRING_LENGTH], u32 it, const u8* 
                 {
                     if (tv >= ARMv5TE)
                     {
-                        IfThen_imm_3("sub", str, it, cond, BITS(c, 0, 3), BITS(c, 3, 3), BITS(c, 6, 3));
+                        size = IfThen_imm_3("sub", str, BITS(c, 0, 3), BITS(c, 3, 3), BITS(c, 6, 3));
                     }
                     else //ARMv4T
                     {
@@ -516,7 +518,7 @@ static u32 Disassemble_thumb(u32 code, u8 str[STRING_LENGTH], u32 it, const u8* 
                 {
                     if (tv >= ARMv5TE)
                     {
-                        IfThen_imm_3("add", str, it, cond, BITS(c, 0, 3), BITS(c, 3, 3), BITS(c, 6, 3));
+                        size = IfThen_imm_3("add", str, BITS(c, 0, 3), BITS(c, 3, 3), BITS(c, 6, 3));
                     }
                     else //ARMv4T
                     {
@@ -530,7 +532,7 @@ static u32 Disassemble_thumb(u32 code, u8 str[STRING_LENGTH], u32 it, const u8* 
                 {
                     if (tv >= ARMv5TE)
                     {
-                        IfThen_reg_3("sub", str, it, cond, BITS(c, 0, 3), BITS(c, 3, 3), BITS(c, 6, 3));
+                        size = IfThen_reg_3("sub", str, BITS(c, 0, 3), BITS(c, 3, 3), BITS(c, 6, 3));
                     }
                     else //ARMv4T
                     {
@@ -541,7 +543,7 @@ static u32 Disassemble_thumb(u32 code, u8 str[STRING_LENGTH], u32 it, const u8* 
                 {
                     if (tv >= ARMv5TE)
                     {
-                        IfThen_reg_3("add", str, it, cond, BITS(c, 0, 3), BITS(c, 3, 3), BITS(c, 6, 3));
+                        size = IfThen_reg_3("add", str, BITS(c, 0, 3), BITS(c, 3, 3), BITS(c, 6, 3));
                     }
                     else //ARMv4T
                     {
@@ -559,7 +561,7 @@ static u32 Disassemble_thumb(u32 code, u8 str[STRING_LENGTH], u32 it, const u8* 
     {
         u8 index = BITS(c, 11, 2);
         if (index == 1) size = sprintf(str, "cmp r%u, #0x%X", BITS(c, 8, 3), BITS(c, 0, 8));
-        else IfThen_imm_2(MovAddSubImmediate[index], str, it, cond, BITS(c, 8, 3), BITS(c, 0, 8));
+        else size = IfThen_imm_2(MovAddSubImmediate[index], str, BITS(c, 8, 3), BITS(c, 0, 8));
         break;
     }
 
@@ -615,7 +617,7 @@ static u32 Disassemble_thumb(u32 code, u8 str[STRING_LENGTH], u32 it, const u8* 
             }
             default:
             {
-                IfThen_reg_2(DataProcessing_thumb[index], str, it, cond, BITS(c, 0, 3), BITS(c, 3, 3));
+                size = IfThen_reg_2(DataProcessing_thumb[index], str, BITS(c, 0, 3), BITS(c, 3, 3));
             }
             }
         }
@@ -782,7 +784,7 @@ static u32 Disassemble_thumb(u32 code, u8 str[STRING_LENGTH], u32 it, const u8* 
                 {
                     u8 firstcond = BITS(c, 4, 4);
                     if (firstcond == NV); //n/a
-                    else if (firstcond == 14 && CountBits(mask) != 1); //n/a
+                    else if (firstcond == AL && CountBits(mask) != 1); //n/a
                     else
                     {
                         if (firstcond & 1) size = sprintf(str, "it%s %s", IT_xyz_1[mask], Conditions[firstcond]);
@@ -1435,7 +1437,7 @@ static void Debug_DumpAllInstructions(void) {
     for (u32 code = 0; code <= 0xffff; code++)
     {
         u8 str[STRING_LENGTH] = { 0 };
-        Disassemble_thumb(code, str, 0, "", ARMv5TE);
+        Disassemble_thumb(code, str, ARMv5TE);
         fprintf(fp, "%04X %s\n", code, str);
     }
 
@@ -1624,7 +1626,7 @@ int main(int argc, char* argv[]) {
             fclose(file_in);
         }
         return 0;
-}
+    }
 
     printf("Nothing was done\n");
 #endif // DEBUG
