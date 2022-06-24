@@ -3,13 +3,118 @@
 //ARM version: 5
 //THUMB version: 2
 
+/* Alphabetical list of ARM instructions (number of variants) */
 /*
-Instructions available in ARMv6 but not ARMv5TE:
+ADC         Add with Carry
+ADD         Add
+AND         Bitwise AND
+B           Branch
+BL          Branch and Link
+BIC         Bit Clear
+BKPT        Breakpoint
+BLX (2)     Branch with Link and Exchange
+BX          Branch and Exchange
+CDP         Coprocessor Data Processing
+CLZ         Count Leading Zeros
+CMN         Compare Negative
+CMP         Compare
+EOR         Bitwise Exclusive OR
+LDC         Load Coprocessor
+LDM (3)     Load Multiple
+LDR         Load Register
+LDRB        Load Register Byte
+LDRBT       Load Register Byte with Translation
+LDRH        Load Register Halfword
+LDRSB       Load Register Signed Byte
+LDRSH       Load Register Signed Halfword
+LDRT        Load Register with Translation
+MCR         Move to Coprocessor from ARM Register
+MLA         Multiply Accumulate
+MOV         Move
+MRC         Move to ARM Register from Coprocessor
+MRS         Move PSR to General-purpose Register
+MSR         Move to Status Register from ARM Register
+MUL         Multiply
+MVN         Move Negative
+ORR         Bitwise OR
+RSB         Reverse Substract
+RSC         Reverse Substract with Carry
+SBC         Substract with Carry
+SMLAL       Signed Multply Accumulate Long
+SMULL       Signed Multply Long
+STC         Store Coprocessor
+STM (2)     Store Multiple
+STR         Store Register
+STRB        Store Register Byte
+STRBT       Store Register Byte with Translation
+STRH        Store Register Halfword
+STRT        Store Register with Translation
+SUB         Substract
+SWI         Software Interrupt
+SWP         Swap
+SWPB        Swap Byte
+TEQ         Test Equivalence
+TST         Test
+UMLAL       Unsigned Multply Accumulate Long
+UMULL       Unsigned Multply Long
 
-ARM: BXJ, CPS, CPY, MCRR2, MRRC2, PKH, QADD16, QADD8, QADDSUBX, QSUB16, QSUB8, QSUBADDX, REV, RFE, SADD, SEL, SETEND, SHADD, SHSUB, SMLAD,
-SMLALD, SMLSD, SMLSLD, SMMLA, SMMLS, SMMUL, SMUAD, SMUSD, SRS, SSAT, SSUB, STREX, SXT, UADD, UHADD, UQADD, UQSUB, USAD, USAT, USUB, UXT,
+//DSP enhanced (ARMv5TE exclusive)
 
-THUMB: CPS, CPY, REV, SETEND, SXTB, SXTH, UXTB, UXTH
+LDRD        ;Loads two words
+MCRR        ;Transfers two ARM register values to a coprocessor
+MRRC        ;Transfers values from a coprocessor to two ARM registers
+PLD         ;Cache Preload
+QADD        ;Performs a saturated integer addition
+QDADD       ;Performs a saturated integer doubling of one operand followed by a saturated integer addition with the other operand
+QDSUB       ;Performs a saturated integer doubling of one operand followed by a saturated integer substraction from the other operand
+QSUB        ;Performs a saturated integer substraction
+SMLA        Signed Multiply Accumulate
+SMLAL       Signed Multiply Accumulate Long
+SMLAW       Signed Multiply Accumulate Word
+SMUL        Signed Multiply
+SMULW       Signed Multiply Word
+STRD        ;Stores two words
+*/
+
+/* Alphabetical list of THUMB instructions (number of variants) */
+/*
+ADC
+ADD (7)
+AND
+ASR (2)
+B (2)
+BIC
+BKPT
+BL
+BLX (2)
+BX
+CMN
+CMP (3)
+EOR
+LDMIA
+LDR (4)
+LDRB (2)
+LDRH (2)
+LDRSB
+LDRSH
+LSL (2)
+LSR (2)
+MOV (3)
+MUL
+MVN
+NEG
+ORR
+POP
+PUSH
+ROR
+SBC
+STMIA
+STR (3)
+STRB (2)
+STRH (2)
+SUB (4)
+SWI
+TST
 */
 
 /* INCLUDES */
