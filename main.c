@@ -154,6 +154,13 @@ typedef struct {
     int end; //end address
 }FILERANGE;
 
+
+typedef enum
+{
+    DARM,
+    DTHUMB
+}DMODE; //for DisassembleFile
+
 typedef enum {
     ARMv4T, //ARM v4, THUMB v1
     ARMv5TE, //ARM v5, THUMB v2
@@ -184,43 +191,43 @@ typedef enum {
 //todo: maybe put "2" instead of "nv" (or nothing) in the last one
 const u8 Conditions[CONDITIONS_MAX][3] = { "eq", "ne", "cs", "cc", "mi", "pl", "vs", "vc", "hi", "ls", "ge", "lt", "gt", "le", "", "" }; //last two are "al" and "nv", but never displayed
 
-const u8 IT_xyz_0[CONDITIONS_MAX][4] = { //if then block suffixes
-    "", //doesn't exist
-    "ttt",
-    "tt",
-    "tte",
-    "t",
-    "tet",
-    "te",
-    "tee",
-    "", //ommitted all
-    "eee",
-    "ee",
-    "eet",
-    "e",
-    "ete",
-    "et",
-    "ett"
-};
+//const u8 IT_xyz_0[CONDITIONS_MAX][4] = { //if then block suffixes
+//    "", //doesn't exist
+//    "ttt",
+//    "tt",
+//    "tte",
+//    "t",
+//    "tet",
+//    "te",
+//    "tee",
+//    "", //ommitted all
+//    "eee",
+//    "ee",
+//    "eet",
+//    "e",
+//    "ete",
+//    "et",
+//    "ett"
+//};
 
-const u8 IT_xyz_1[CONDITIONS_MAX][4] = { //inverse of the one above
-    "", //doesn't exist
-    "eee",
-    "ee",
-    "eet",
-    "e",
-    "ete",
-    "et",
-    "ett",
-    "", //ommitted all
-    "tee",
-    "te",
-    "tet",
-    "t",
-    "tte",
-    "tt",
-    "ttt"
-};
+//const u8 IT_xyz_1[CONDITIONS_MAX][4] = { //inverse of the one above
+//    "", //doesn't exist
+//    "eee",
+//    "ee",
+//    "eet",
+//    "e",
+//    "ete",
+//    "et",
+//    "ett",
+//    "", //ommitted all
+//    "tee",
+//    "te",
+//    "tet",
+//    "t",
+//    "tte",
+//    "tt",
+//    "ttt"
+//};
 
 const u8 AddressingModes[4][3] = {
     "da", //Decrement after
@@ -291,9 +298,9 @@ const u8 DSP_Multiplies[4][6] = { "smla", "", "smlal", "smul" }; //slot 1 empty,
 const u8 MultiplyLong[4][6] = { "umull", "umlal", "smull", "smlal" };
 const u8 MovAddSubImmediate[4][4] = { "mov", "cmp", "add", "sub" }; //cmp won't be used
 const u8 LoadStoreRegister[8][6] = { "str", "strh", "strb", "ldrsb", "ldr", "ldrh", "ldrb", "ldrsh" };
-const u8 CPS_effect[2][3] = { "ie", "id" };
-const u8 CPS_flags[8][5] = { "none", "f", "i", "if", "a", "af", "ai", "aif" };
-const u8 SignZeroExtend[4][5] = { "sxth", "sxtb", "uxth", "uxtb" };
+//const u8 CPS_effect[2][3] = { "ie", "id" };
+//const u8 CPS_flags[8][5] = { "none", "f", "i", "if", "a", "af", "ai", "aif" };
+//const u8 SignZeroExtend[4][5] = { "sxth", "sxtb", "uxth", "uxtb" };
 const u8 Shifters[4][4] = { "lsl", "lsr", "asr", "ror" }; //+rrx
 
 u32 debug_na_count = 0;
@@ -1084,7 +1091,7 @@ static void Disassemble_arm(u32 code, u8 str[STRING_LENGTH], ARMARCH av) {
                     }
                     default:
                     {
-                        size = sprintf(str, "%s%s%s r%u, r%u, %s r%u", DataProcessing_arm[op], s, Conditions[cond], rd, rm, Shifters[shift], rs);
+                        size = sprintf(str, "%s%s%s r%u, r%u, r%u, %s r%u", DataProcessing_arm[op], s, Conditions[cond], rd, rn, rm, Shifters[shift], rs);
                     }
                     }
                 }
@@ -1472,7 +1479,7 @@ static int GetFileSize_mine(FILE* fp) {
     return size;
 }
 
-static int DisassembleFile(FILE* in, FILE* out, FILERANGE* range) {
+static int DisassembleFile(FILE* in, FILE* out, FILERANGE* range, DMODE dmode) {
     /* Disassemble from a binary file, print to another file */
     int size = GetFileSize_mine(in);
     if (range->start > size || range->end > size) return 0;
@@ -1484,20 +1491,34 @@ static int DisassembleFile(FILE* in, FILE* out, FILERANGE* range) {
 
     fseek(in, range->start, SEEK_SET);
 
-    for (int i = range->start; i < (range->start + size) / 2; i++)
+    if (dmode == DARM)
     {
-        u8 str[STRING_LENGTH] = { 0 };
-        u32 code = 0;
-        fread(&code, 4, 1, in); //prefetch 32 bits
-        if (Disassemble_thumb(code, str, ARMv5TE)) //32-bit
+        for (int i = range->start; i < (range->start + size) / 4; i++)
         {
-            fprintf(out, "%08X: %08X %s\n", range->start + (i - range->start) * 2, code, str);
-            i++;
+            u8 str[STRING_LENGTH] = { 0 };
+            u32 code = 0;
+            fread(&code, 4, 1, in); //read 32 bits
+            Disassemble_arm(code, str, ARMv5TE);
+            fprintf(out, "%08X: %08X %s\n", range->start + (i - range->start) * 4, code, str);
         }
-        else //16-bit
+    }
+    else //DTHUMB
+    {
+        for (int i = range->start; i < (range->start + size) / 2; i++)
         {
-            fseek(in, -2, SEEK_CUR); //go back 2 bytes
-            fprintf(out, "%08X: %04X     %s\n", range->start + (i - range->start) * 2, code & 0xffff, str);
+            u8 str[STRING_LENGTH] = { 0 };
+            u32 code = 0;
+            fread(&code, 4, 1, in); //prefetch 32 bits
+            if (Disassemble_thumb(code, str, ARMv5TE)) //32-bit
+            {
+                fprintf(out, "%08X: %08X %s\n", range->start + (i - range->start) * 2, code, str);
+                i++;
+            }
+            else //16-bit
+            {
+                fseek(in, -2, SEEK_CUR); //go back 2 bytes
+                fprintf(out, "%08X: %04X     %s\n", range->start + (i - range->start) * 2, code & 0xffff, str);
+            }
         }
     }
 
@@ -1581,7 +1602,6 @@ int main(int argc, char* argv[]) {
 
     clock_t start = clock();
 
-
 #ifdef DEBUG
     //Debug_DumpAllInstructions();
     Debug_DisassembleCode_arm(0xfd40d1ff);
@@ -1591,15 +1611,17 @@ int main(int argc, char* argv[]) {
     //    Debug_DisassembleCode_arm(i);
     //}
     //printf("%u n/a instructions, %.2f%% complete.\n", debug_na_count, 100 - (100 * (float)debug_na_count / (float)0x100000000));
-
+    printf("Completion time: %.0f ms\n", (double)clock() - (double)start);
 #else
 
-    //todo: ask for ARM or THUMB mode, or auto detect, or do both
+    //todo: use argc efficiently
     u8* filename_in = argv[1];
     u8* filename_out = NULL;
     FILE* file_in = NULL;
     FILE* file_out = NULL;
     FILERANGE filerange = { 0 };
+    //DMODE dmode = DTHUMB; //todo: get with command line argument, /a or /t (or -a, -t)
+    DMODE dmode = DARM; //todo: get with command line argument, /a or /t (or -a, -t)
 
     if (IsValidPath(filename_in)) //file in
     {
@@ -1618,7 +1640,7 @@ int main(int argc, char* argv[]) {
 
             IfValidRangeSet(&filerange, argv[3]);
             printf("Starting disassembly of \"%s\".\n", filename_in);
-            if (DisassembleFile(file_in, file_out, &filerange))
+            if (DisassembleFile(file_in, file_out, &filerange, dmode))
             {
                 printf("Successfully disassembled \"%s\" to \"%s\".\n", filename_in, filename_out);
             }
@@ -1633,7 +1655,7 @@ int main(int argc, char* argv[]) {
         {
             IfValidRangeSet(&filerange, argv[2]);
             printf("Starting disassembly of \"%s\".\n", filename_in);
-            if (DisassembleFile(file_in, stdout, &filerange))
+            if (DisassembleFile(file_in, stdout, &filerange, dmode))
             {
                 printf("Successfully disassembled \"%s\".\n", filename_in);
             }
@@ -1643,13 +1665,13 @@ int main(int argc, char* argv[]) {
             }
             fclose(file_in);
         }
+        printf("Completion time: %.0f ms\n", (double)clock() - (double)start);
         return 0;
     }
 
     printf("Nothing was done\n");
 #endif // DEBUG
 
-    printf("Completion time: %.0f ms\n", (double)clock() - (double)start);
 
     return 0;
 }
