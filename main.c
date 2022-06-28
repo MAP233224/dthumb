@@ -610,8 +610,16 @@ static u32 Disassemble_thumb(u32 code, u8 str[STRING_LENGTH], ARMARCH tv) {
             }
             case 3:
             {
-                if (BITS(c, 7, 1)) size = sprintf(str, "blx r%u", BITS(c, 3, 4)); //BLX
-                else size = sprintf(str, "bx r%u", BITS(c, 3, 4)); //BX
+                if (BITS(c, 0, 3)) break; //Should-Be-Zero
+                if (BITS(c, 7, 1))
+                {
+                    if (tv < ARMv5TE) break;
+                    size = sprintf(str, "blx r%u", BITS(c, 3, 4)); //BLX
+                }
+                else
+                {
+                    size = sprintf(str, "bx r%u", BITS(c, 3, 4)); //BX
+                }
                 break;
             }
             }
@@ -837,7 +845,7 @@ static u32 Disassemble_thumb(u32 code, u8 str[STRING_LENGTH], ARMARCH tv) {
             {
             case 14: //UDF "Permanently undefined space", OS dependant
             {
-                size = sprintf(str, "udf #0x%X", BITS(c, 0, 8));
+                //size = sprintf(str, "udf #0x%X", BITS(c, 0, 8)); //note: not an instruction in ARMv5TE, just UNDEFINED
                 break;
             }
             case 15: //SWI
@@ -1740,4 +1748,4 @@ int main(int argc, char* argv[]) {
 
     printf("Completion time: %.0f ms\n", (double)clock() - (double)start);
     return 0;
-}
+    }
