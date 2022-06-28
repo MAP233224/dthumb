@@ -149,22 +149,10 @@ typedef unsigned int u32;
 typedef unsigned short u16;
 typedef unsigned char u8;
 
-typedef struct {
-    int start; //starting address
-    int end; //end address
-}FILERANGE;
-
-
-typedef enum
-{
-    DARM,
-    DTHUMB
-}DMODE; //for DisassembleFile
-
 typedef enum {
     ARMv4T, //ARM v4, THUMB v1
     ARMv5TE, //ARM v5, THUMB v2
-    ARMv6, //ARM v6, THUMB v3
+    ARMv6 //ARM v6, THUMB v3
 }ARMARCH; //only 32-bit legacy architectures with THUMB support
 
 typedef enum {
@@ -305,7 +293,7 @@ const u8 Shifters[4][4] = { "lsl", "lsr", "asr", "ror" }; //+rrx
 
 u32 debug_na_count = 0;
 
-/* FUNCTIONS */
+/* LIBRARY FUNCTIONS */
 
 static void SubstituteSubString(u8 dst[STRING_LENGTH], u32 index, const u8* sub, u32 size) {
     /* Insert sub string of length size (< STRING_LENGTH) at dst[index] */
@@ -1447,6 +1435,8 @@ static void Disassemble_arm(u32 code, u8 str[STRING_LENGTH], ARMARCH av) {
     }
 }
 
+/* DEBUG FUNCTIONS */
+
 static void Debug_DisassembleCode_arm(u32 c) {
     /* Debug: disassemble a single ARM instruction from the ARMv5TE architecture */
     u8 s[STRING_LENGTH] = { 0 };
@@ -1470,6 +1460,31 @@ static void Debug_DumpAllInstructions(void) {
 
     printf("N/A instructions remaining: %u (%u%% done)\n", debug_na_count, 100 - 100 * debug_na_count / 65536);
 }
+
+/* COMMAND LINE UTILITY STRUCTS, ENUMS AND FUNCTIONS */
+
+typedef enum {
+    DARM,
+    DTHUMB
+}DMODE; //for DisassembleFile
+
+typedef enum {
+    DARGS_INVALID,
+    DARGS_STDOUT,
+    DARGS_FILEOUT
+}DARGS_STATUS; //for DisassembleFile
+
+typedef struct {
+    int start; //starting address
+    int end; //end address
+}FILERANGE; //for DisassembleFile
+
+typedef struct {
+    u8* fname_in;
+    u8* fname_out;
+    FILERANGE frange;
+    DMODE dmode;
+}DARGS; //for DisassembleFile
 
 static int GetFileSize_mine(FILE* fp) {
     /* Return the size of an opened file */
@@ -1599,23 +1614,6 @@ static int IfValidRangeSet(FILERANGE* range, u8* r) {
     return 1;
 }
 
-/* ENTRY POINT */
-
-//#define DEBUG //comment out to disable debug ifdefs
-
-typedef struct {
-    u8* fname_in;
-    u8* fname_out;
-    FILERANGE frange;
-    DMODE dmode;
-} DARGS;
-
-typedef enum {
-    DARGS_INVALID,
-    DARGS_STDOUT,
-    DARGS_FILEOUT,
-} DARGS_STATUS;
-
 static int IfValidModeSet(DMODE* dmode, u8* m) {
     /* Only check first two chars to change from default DTHUMB to DARM mode */
     if (!m || !m[0]) return 0; //needs to be at least one char
@@ -1631,16 +1629,12 @@ static int ParseCommandLineArguments(DARGS* dargs, int argc, char* argv[]) {
     /* You can pass arguments in any order, but they need to be valid */
     /* fname_in has to be valid, else return 0 (failed) */
     /* The other arguments can be invalid, default behavior is handled */
-    //todo: fill dargs struct according to argc and argv
-
-    //0: exe, 1: fname_in, 2,3,4:fname_out/frange/dmode
 
     if (argc > 5) return DARGS_INVALID;
     if (!IsValidPath(argv[1])) return DARGS_INVALID;
 
     dargs->fname_in = argv[1];
 
-    //todo: check remaining args
     if (IsValidPath(argv[2])) //fileout
     {
         dargs->fname_out = argv[2];
@@ -1652,7 +1646,7 @@ static int ParseCommandLineArguments(DARGS* dargs, int argc, char* argv[]) {
         {
             IfValidRangeSet(&dargs->frange, argv[4]);
         }
-        return DARGS_FILEOUT; //maybe switch case depending on this value
+        return DARGS_FILEOUT;
     }
     else //stdout
     {
@@ -1664,9 +1658,11 @@ static int ParseCommandLineArguments(DARGS* dargs, int argc, char* argv[]) {
         {
             IfValidRangeSet(&dargs->frange, argv[3]);
         }
-        return DARGS_STDOUT; //maybe switch case depending on this value
+        return DARGS_STDOUT;
     }
 }
+
+//#define DEBUG //comment out to disable debug ifdefs
 
 int main(int argc, char* argv[]) {
 
@@ -1693,7 +1689,7 @@ int main(int argc, char* argv[]) {
         return 0; //terminate
     }
 
-    FILE* file_in = fopen(dargs.fname_in, "rb");
+    FILE* file_in = fopen(dargs.fname_in, "rb"); //ignore warning, IsValidPath makes sure it isn't NULL
     if (file_in == NULL)
     {
         printf("ERROR: The file \"%s\" doesn't exist. Aborting.\n", dargs.fname_in);
@@ -1718,8 +1714,12 @@ int main(int argc, char* argv[]) {
     }
     case DARGS_FILEOUT:
     {
-        FILE* file_out = fopen(dargs.fname_out, "w+");
-        if (file_out == NULL) return 0; //couldn't create file for some reason
+        FILE* file_out = fopen(dargs.fname_out, "w+"); //ignore warning, IsValidPath makes sure it isn't NULL
+        if (file_out == NULL)
+        {
+            printf("ERROR: The file \"%s\" could not be created. Aborting.\n", dargs.fname_out);
+            return 0; //terminate
+        }
 
         printf("Starting disassembly of \"%s\".\n", dargs.fname_in);
         if (DisassembleFile(file_in, file_out, &dargs.frange, dargs.dmode))
