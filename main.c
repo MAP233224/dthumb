@@ -135,7 +135,7 @@ TST         Test
 //#define _CRT_SECURE_NO_WARNINGS 1
 #define PATH_LENGTH (256)
 #define RANGE_LENGTH (18)
-#define STRING_LENGTH (64)
+#define STRING_LENGTH (80) //can fail at 64 in SubstituteSubString
 #define CONDITIONS_MAX (16)
 
 #define BITS(x, b, n) ((x >> b) & ((1 << n) - 1)) //retrieves n bits from x starting at bit b
@@ -1487,7 +1487,7 @@ static int DisassembleFile(FILE* in, FILE* out, FILERANGE* range, DMODE dmode) {
     {
         size = range->end;
     }
-    fprintf(out, "Disassembly of %u bytes:\n\n", range->end - range->start);
+    fprintf(out, "Disassembly of %u (0x%X) bytes:\n\n", range->start + size, range->start + size);
 
     fseek(in, range->start, SEEK_SET);
 
@@ -1553,12 +1553,13 @@ static int IfValidRangeSet(FILERANGE* range, u8* r) {
 
     u32 start = 0;
     u32 end = 0;
+    u32 valid = 0;
 
-    if (!r || !r[0]) return 0; //needs to be at least one char
+    if (!r || !r[0] || r[0] == '/') return 0; //needs to be at least one char, +smart abort for detecting "/a"
 
     /* Init buffer (memcpy with two limit conditions) */
     u8 str[RANGE_LENGTH] = { 0 };
-    u32 i = 0;
+    u32 i = 0; //count chars
     while (r[i] && (i < RANGE_LENGTH - 1)) //must be null terminated
     {
         str[i] = r[i];
@@ -1568,19 +1569,23 @@ static int IfValidRangeSet(FILERANGE* range, u8* r) {
     if (*(u16*)str == 0x2d2d) //detect double dash
     {
         end = strtol(&str[2], NULL, 16);
+        valid = 1;
     }
     else
     {
-        for (u32 i = 0; i < RANGE_LENGTH; i++)
+        for (u32 j = 0; j < i; j++)
         {
-            if (str[i] == '-') //first dash
+            if (str[j] == '-') //first dash
             {
                 start = strtol(str, NULL, 16);
-                end = strtol(&str[i + 1], NULL, 16);
+                end = strtol(&str[j + 1], NULL, 16);
+                valid = 1;
                 break;
             }
         }
     }
+
+    if (!valid) return 0;
 
     if (end && (start > end))
     {
@@ -1598,6 +1603,71 @@ static int IfValidRangeSet(FILERANGE* range, u8* r) {
 
 //#define DEBUG //comment out to disable debug ifdefs
 
+typedef struct {
+    u8* fname_in;
+    u8* fname_out;
+    FILERANGE frange;
+    DMODE dmode;
+} DARGS;
+
+typedef enum {
+    DARGS_INVALID,
+    DARGS_STDOUT,
+    DARGS_FILEOUT,
+} DARGS_STATUS;
+
+static int IfValidModeSet(DMODE* dmode, u8* m) {
+    /* Only check first two chars to change from default DTHUMB to DARM mode */
+    if (!m || !m[0]) return 0; //needs to be at least one char
+    if (*(u16*)m == 0x612f) //"/a"
+    {
+        *dmode = DARM;
+        return 1;
+    }
+    return 0;
+}
+
+static int ParseCommandLineArguments(DARGS* dargs, int argc, char* argv[]) {
+    /* You can pass arguments in any order, but they need to be valid */
+    /* fname_in has to be valid, else return 0 (failed) */
+    /* The other arguments can be invalid, default behavior is handled */
+    //todo: fill dargs struct according to argc and argv
+
+    //0: exe, 1: fname_in, 2,3,4:fname_out/frange/dmode
+
+    if (argc > 5) return DARGS_INVALID;
+    if (!IsValidPath(argv[1])) return DARGS_INVALID;
+
+    dargs->fname_in = argv[1];
+
+    //todo: check remaining args
+    if (IsValidPath(argv[2])) //fileout
+    {
+        dargs->fname_out = argv[2];
+        if (IfValidRangeSet(&dargs->frange, argv[3]))
+        {
+            IfValidModeSet(&dargs->dmode, argv[4]);
+        }
+        else if (IfValidModeSet(&dargs->dmode, argv[3]))
+        {
+            IfValidRangeSet(&dargs->frange, argv[4]);
+        }
+        return DARGS_FILEOUT; //maybe switch case depending on this value
+    }
+    else //stdout
+    {
+        if (IfValidRangeSet(&dargs->frange, argv[2]))
+        {
+            IfValidModeSet(&dargs->dmode, argv[3]);
+        }
+        else if (IfValidModeSet(&dargs->dmode, argv[2]))
+        {
+            IfValidRangeSet(&dargs->frange, argv[3]);
+        }
+        return DARGS_STDOUT; //maybe switch case depending on this value
+    }
+}
+
 int main(int argc, char* argv[]) {
 
     clock_t start = clock();
@@ -1614,64 +1684,60 @@ int main(int argc, char* argv[]) {
     printf("Completion time: %.0f ms\n", (double)clock() - (double)start);
 #else
 
-    //todo: use argc efficiently
-    u8* filename_in = argv[1];
-    u8* filename_out = NULL;
-    FILE* file_in = NULL;
-    FILE* file_out = NULL;
-    FILERANGE filerange = { 0 };
-    //DMODE dmode = DTHUMB; //todo: get with command line argument, /a or /t (or -a, -t)
-    DMODE dmode = DARM; //todo: get with command line argument, /a or /t (or -a, -t)
+    DARGS dargs = { NULL, NULL, {0}, DTHUMB };
+    DARGS_STATUS ds = ParseCommandLineArguments(&dargs, argc, argv);
 
-    if (IsValidPath(filename_in)) //file in
+    if (ds == DARGS_INVALID)
     {
-        file_in = fopen(filename_in, "rb");
-        if (file_in == NULL)
-        {
-            printf("ERROR: The file \"%s\" doesn't exist. Aborting.\n", filename_in);
-            return 0;
-        }
-
-        if (IsValidPath(argv[2])) //file out
-        {
-            filename_out = argv[2];
-            file_out = fopen(filename_out, "w+");
-            if (file_out == NULL) return 0; //couldn't create file for some reason
-
-            IfValidRangeSet(&filerange, argv[3]);
-            printf("Starting disassembly of \"%s\".\n", filename_in);
-            if (DisassembleFile(file_in, file_out, &filerange, dmode))
-            {
-                printf("Successfully disassembled \"%s\" to \"%s\".\n", filename_in, filename_out);
-            }
-            else
-            {
-                printf("ERROR: DisassembleFile failed.\n");
-            }
-            fclose(file_in);
-            fclose(file_out);
-        }
-        else //stdout
-        {
-            IfValidRangeSet(&filerange, argv[2]);
-            printf("Starting disassembly of \"%s\".\n", filename_in);
-            if (DisassembleFile(file_in, stdout, &filerange, dmode))
-            {
-                printf("Successfully disassembled \"%s\".\n", filename_in);
-            }
-            else
-            {
-                printf("ERROR: DisassembleFile failed.\n");
-            }
-            fclose(file_in);
-        }
-        printf("Completion time: %.0f ms\n", (double)clock() - (double)start);
-        return 0;
+        printf("Nothing was done\n");
+        return 0; //terminate
     }
 
-    printf("Nothing was done\n");
+    FILE* file_in = fopen(dargs.fname_in, "rb");
+    if (file_in == NULL)
+    {
+        printf("ERROR: The file \"%s\" doesn't exist. Aborting.\n", dargs.fname_in);
+        return 0; //terminate
+    }
+
+    switch (ds)
+    {
+    case DARGS_STDOUT:
+    {
+        printf("Starting disassembly of \"%s\".\n", dargs.fname_in);
+        if (DisassembleFile(file_in, stdout, &dargs.frange, dargs.dmode))
+        {
+            printf("Successfully disassembled \"%s\".\n", dargs.fname_in);
+        }
+        else
+        {
+            printf("ERROR: DisassembleFile failed.\n");
+        }
+        fclose(file_in);
+        break;
+    }
+    case DARGS_FILEOUT:
+    {
+        FILE* file_out = fopen(dargs.fname_out, "w+");
+        if (file_out == NULL) return 0; //couldn't create file for some reason
+
+        printf("Starting disassembly of \"%s\".\n", dargs.fname_in);
+        if (DisassembleFile(file_in, file_out, &dargs.frange, dargs.dmode))
+        {
+            printf("Successfully disassembled \"%s\" to \"%s\".\n", dargs.fname_in, dargs.fname_out);
+        }
+        else
+        {
+            printf("ERROR: DisassembleFile failed.\n");
+        }
+        fclose(file_in);
+        fclose(file_out);
+        break;
+    }
+    }
+
 #endif // DEBUG
 
-
+    printf("Completion time: %.0f ms\n", (double)clock() - (double)start);
     return 0;
 }
