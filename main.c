@@ -1506,41 +1506,39 @@ static int DisassembleFile(FILE* in, FILE* out, FILERANGE* range, DMODE dmode) {
     /* Disassemble from a binary file, print to another file */
     int size = GetFileSize_mine(in);
     if (range->start > size || range->end > size) return 0;
-    if (range->end && (range->end < size))
-    {
-        size = range->end;
-    }
-    fprintf(out, "Disassembly of %u (0x%X) bytes:\n\n", range->start + size, range->start + size);
+    if (range->end == 0) range->end = size;
+    size = range->end - range->start;
+    fprintf(out, "Disassembly of %u (0x%X) bytes:\n\n", size, size);
 
     fseek(in, range->start, SEEK_SET);
 
     if (dmode == DARM)
     {
-        for (int i = range->start; i < (range->start + size) / 4; i++)
+        for (int i = 0; i < size / 4; i++)
         {
             u8 str[STRING_LENGTH] = { 0 };
             u32 code = 0;
             fread(&code, 4, 1, in); //read 32 bits
             Disassemble_arm(code, str, ARMv5TE);
-            fprintf(out, "%08X: %08X %s\n", range->start + (i - range->start) * 4, code, str);
+            fprintf(out, "%08X: %08X %s\n", range->start + i * 4, code, str);
         }
     }
     else //DTHUMB
     {
-        for (int i = range->start; i < (range->start + size) / 2; i++)
+        for (int i = 0; i < size / 2; i++)
         {
             u8 str[STRING_LENGTH] = { 0 };
             u32 code = 0;
             fread(&code, 4, 1, in); //prefetch 32 bits
             if (Disassemble_thumb(code, str, ARMv5TE)) //32-bit
             {
-                fprintf(out, "%08X: %08X %s\n", range->start + (i - range->start) * 2, code, str);
+                fprintf(out, "%08X: %08X %s\n", range->start + i * 2, code, str);
                 i++;
             }
             else //16-bit
             {
                 fseek(in, -2, SEEK_CUR); //go back 2 bytes
-                fprintf(out, "%08X: %04X     %s\n", range->start + (i - range->start) * 2, code & 0xffff, str);
+                fprintf(out, "%08X: %04X     %s\n", range->start + i * 2, code & 0xffff, str);
             }
         }
     }
@@ -1748,4 +1746,4 @@ int main(int argc, char* argv[]) {
 
     printf("Completion time: %.0f ms\n", (double)clock() - (double)start);
     return 0;
-    }
+}
