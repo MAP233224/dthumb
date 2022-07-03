@@ -147,7 +147,7 @@ static int IsValidPath(u8* path) {
 static int IfValidCodeSet(u32* code, u8* str) {
     /* Convert string to 32-bit hex value */
     if (strlen(str) > 8) return 0;
-    *code = strtol(str, NULL, 16);
+    *code = (u32)strtoll(str, NULL, 16);
     return 1;
 }
 
