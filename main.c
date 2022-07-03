@@ -150,6 +150,11 @@ typedef unsigned short u16;
 typedef unsigned char u8;
 
 typedef enum {
+    SIZE_16,
+    SIZE_32
+}THUMBSIZE;
+
+typedef enum {
     ARMv4T, //ARM v4, THUMB v1
     ARMv5TE, //ARM v5, THUMB v2
     ARMv6 //ARM v6, THUMB v3
@@ -459,7 +464,7 @@ static u32 Disassemble_thumb(u32 code, u8 str[STRING_LENGTH], ARMARCH tv) {
     //6: Load/store multiple, Conditional branch, Undefined instruction, Software interrupt
     //7: Unconditional branch, BLX suffix, Undefined instruction, BL/BLX prefix, BL suffix
 
-    u32 thumb_size = 0; //return value
+    THUMBSIZE thumb_size = SIZE_16; //return value
     u16 c = code & 0xffff; //low 16 bits
     int size = 0; //return value of sprintf to be passed to CheckSpecialRegister
 
@@ -904,7 +909,7 @@ static u32 Disassemble_thumb(u32 code, u8 str[STRING_LENGTH], ARMARCH tv) {
                 {
                     if (!BITS(c, 0, 1))
                     {
-                        thumb_size++;
+                        thumb_size = SIZE_32;
                         u32 ofs = ((BITS((code & 0xffff), 0, 10) << 10) | (BITS(c, 1, 10))) << 2;
                         size = sprintf(str, "blx #0x%X", 4 + SIGNEX32_VAL(ofs, 22));
                     }
@@ -913,7 +918,7 @@ static u32 Disassemble_thumb(u32 code, u8 str[STRING_LENGTH], ARMARCH tv) {
                 //case 2: break; //BL/BLX prefix
                 case 3: //BL suffix
                 {
-                    thumb_size++;
+                    thumb_size = SIZE_32;
                     u32 ofs = ((BITS((code & 0xffff), 0, 10) << 11) | (BITS(c, 0, 11))) << 1;
                     size = sprintf(str, "bl #0x%X", 4 + (int)SIGNEX32_VAL(ofs, 22));
                     break;
@@ -1478,6 +1483,7 @@ typedef enum {
 
 typedef enum {
     DARGS_INVALID,
+    DARGS_SINGLE,
     DARGS_STDOUT,
     DARGS_FILEOUT
 }DARGS_STATUS; //for DisassembleFile
@@ -1492,6 +1498,7 @@ typedef struct {
     u8* fname_out;
     FILERANGE frange;
     DMODE dmode;
+    u32 code;
 }DARGS; //for DisassembleFile
 
 static int GetFileSize_mine(FILE* fp) {
@@ -1505,7 +1512,7 @@ static int GetFileSize_mine(FILE* fp) {
 static int DisassembleFile(FILE* in, FILE* out, FILERANGE* range, DMODE dmode) {
     /* Disassemble from a binary file, print to another file */
     int size = GetFileSize_mine(in);
-    if (range->start > size || range->end > size) return 0;
+    if (range->start > size || range->end > size) return 0; //out of range
     if (range->end == 0) range->end = size;
     size = range->end - range->start;
     fprintf(out, "Disassembly of %u (0x%X) bytes:\n\n", size, size);
@@ -1530,7 +1537,7 @@ static int DisassembleFile(FILE* in, FILE* out, FILERANGE* range, DMODE dmode) {
             u8 str[STRING_LENGTH] = { 0 };
             u32 code = 0;
             fread(&code, 4, 1, in); //prefetch 32 bits
-            if (Disassemble_thumb(code, str, ARMv5TE)) //32-bit
+            if (Disassemble_thumb(code, str, ARMv5TE) == SIZE_32) //32-bit
             {
                 fprintf(out, "%08X: %08X %s\n", range->start + i * 2, code, str);
                 i++;
@@ -1547,9 +1554,29 @@ static int DisassembleFile(FILE* in, FILE* out, FILERANGE* range, DMODE dmode) {
     return 1; //success
 }
 
+static void DisassembleSingle(u32 code, DMODE dmode) {
+    //todo: disassemble a single code
+    u8 str[STRING_LENGTH] = { 0 };
+    if (dmode == DARM)
+    {
+        Disassemble_arm(code, str, ARMv5TE);
+        printf("%08X %s\n", code, str);
+    }
+    else
+    {
+        if (Disassemble_thumb(code, str, ARMv5TE) == SIZE_32) //32-bit
+        {
+            printf("%08X %s\n", code, str);
+        }
+        else //16-bit
+        {
+            printf("%04X     %s\n", code & 0xffff, str);
+        }
+    }
+}
+
 static int IsValidPath(u8* path) {
     /* Check if length of path/filename is */
-    //todo: check if you can also open it
     u32 hasDotAndEom = 0;
     if (!path || !path[0]) return 0; //needs to be at least one char
     for (u32 i = 1; i < PATH_LENGTH; i++)
@@ -1565,12 +1592,19 @@ static int IsValidPath(u8* path) {
     return 0;
 }
 
+static int IfValidCodeSet(u32* code, u8* str) {
+    /* Convert string to 32-bit hex value */
+    if (strlen(str) > 8) return 0;
+    *code = strtol(str, NULL, 16);
+    return 1;
+}
+
 static int IfValidRangeSet(FILERANGE* range, u8* r) {
     /* Check to see if the range string yields a valid FILERANGE */
     //Acceptable formats:
-    //"0x%X-0x%X" //start to end
-    //"--0x%X" //unspecified start (default to beginning of file, 0) to end
-    //"0x%X--" //start to unspecified end (default to end of file)
+    //"X-X" //start to end
+    //"--X" //unspecified start (default to beginning of file, 0) to end
+    //"X--" //start to unspecified end (default to end of file)
 
     u32 start = 0;
     u32 end = 0;
@@ -1636,36 +1670,45 @@ static int ParseCommandLineArguments(DARGS* dargs, int argc, char* argv[]) {
     /* fname_in has to be valid, else return 0 (failed) */
     /* The other arguments can be invalid, default behavior is handled */
 
+    //todo: make better use of argc to know which argv you can read from (careful with invalid pointers, oob reads)
+
     if (argc > 5) return DARGS_INVALID;
-    if (!IsValidPath(argv[1])) return DARGS_INVALID;
 
-    dargs->fname_in = argv[1];
-
-    if (IsValidPath(argv[2])) //fileout
+    if (IsValidPath(argv[1])) //filein
     {
-        dargs->fname_out = argv[2];
-        if (IfValidRangeSet(&dargs->frange, argv[3]))
+        dargs->fname_in = argv[1];
+        if (IsValidPath(argv[2])) //fileout
         {
-            IfValidModeSet(&dargs->dmode, argv[4]);
+            dargs->fname_out = argv[2];
+            if (IfValidRangeSet(&dargs->frange, argv[3]))
+            {
+                IfValidModeSet(&dargs->dmode, argv[4]);
+            }
+            else if (IfValidModeSet(&dargs->dmode, argv[3]))
+            {
+                IfValidRangeSet(&dargs->frange, argv[4]);
+            }
+            return DARGS_FILEOUT;
         }
-        else if (IfValidModeSet(&dargs->dmode, argv[3]))
+        else //stdout
         {
-            IfValidRangeSet(&dargs->frange, argv[4]);
+            if (IfValidRangeSet(&dargs->frange, argv[2]))
+            {
+                IfValidModeSet(&dargs->dmode, argv[3]);
+            }
+            else if (IfValidModeSet(&dargs->dmode, argv[2]))
+            {
+                IfValidRangeSet(&dargs->frange, argv[3]);
+            }
+            return DARGS_STDOUT;
         }
-        return DARGS_FILEOUT;
     }
-    else //stdout
+    else if (IfValidCodeSet(&dargs->code, argv[1])) //single code
     {
-        if (IfValidRangeSet(&dargs->frange, argv[2]))
-        {
-            IfValidModeSet(&dargs->dmode, argv[3]);
-        }
-        else if (IfValidModeSet(&dargs->dmode, argv[2]))
-        {
-            IfValidRangeSet(&dargs->frange, argv[3]);
-        }
-        return DARGS_STDOUT;
+        IfValidModeSet(&dargs->dmode, argv[2]);
+        return DARGS_SINGLE;
     }
+    return DARGS_INVALID;
 }
 
 //#define DEBUG //comment out to disable debug ifdefs
@@ -1689,23 +1732,26 @@ int main(int argc, char* argv[]) {
     DARGS dargs = { NULL, NULL, {0}, DTHUMB };
     DARGS_STATUS ds = ParseCommandLineArguments(&dargs, argc, argv);
 
-    if (ds == DARGS_INVALID)
+    switch (ds)
+    {
+    case DARGS_INVALID:
     {
         printf("Nothing was done\n");
         return 0; //terminate
     }
-
-    FILE* file_in = fopen(dargs.fname_in, "rb"); //ignore warning, IsValidPath makes sure it isn't NULL
-    if (file_in == NULL)
+    case DARGS_SINGLE:
     {
-        printf("ERROR: The file \"%s\" doesn't exist. Aborting.\n", dargs.fname_in);
-        return 0; //terminate
+        DisassembleSingle(dargs.code, dargs.dmode);
+        break;
     }
-
-    switch (ds)
-    {
     case DARGS_STDOUT:
     {
+        FILE* file_in = fopen(dargs.fname_in, "rb"); //ignore warning, IsValidPath makes sure it isn't NULL
+        if (file_in == NULL)
+        {
+            printf("ERROR: The file \"%s\" doesn't exist. Aborting.\n", dargs.fname_in);
+            return 0; //terminate
+        }
         printf("Starting disassembly of \"%s\".\n", dargs.fname_in);
         if (DisassembleFile(file_in, stdout, &dargs.frange, dargs.dmode))
         {
@@ -1720,6 +1766,12 @@ int main(int argc, char* argv[]) {
     }
     case DARGS_FILEOUT:
     {
+        FILE* file_in = fopen(dargs.fname_in, "rb"); //ignore warning, IsValidPath makes sure it isn't NULL
+        if (file_in == NULL)
+        {
+            printf("ERROR: The file \"%s\" doesn't exist. Aborting.\n", dargs.fname_in);
+            return 0; //terminate
+        }
         FILE* file_out = fopen(dargs.fname_out, "w+"); //ignore warning, IsValidPath makes sure it isn't NULL
         if (file_out == NULL)
         {
