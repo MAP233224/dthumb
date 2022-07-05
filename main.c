@@ -102,12 +102,12 @@ static int DisassembleFile(FILE* in, FILE* out, FILERANGE* range, DMODE dmode) {
         }
     }
 
-    fprintf(out, "\n%u unknown instructions.\n", debug_na_count);
+    fprintf(out, "\n%u unknown instructions.", debug_na_count);
     return 1; //success
 }
 
 static void DisassembleSingle(u32 code, DMODE dmode) {
-    //todo: disassemble a single code
+    /* Disassemble a single code and prints it to stdout */
     u8 str[STRING_LENGTH] = { 0 };
     if (dmode == DARM)
     {
@@ -224,7 +224,7 @@ static int ParseCommandLineArguments(DARGS* dargs, int argc, char* argv[]) {
 
     //todo: make better use of argc to know which argv you can read from (careful with invalid pointers, oob reads)
 
-    if (argc > 5) return DARGS_INVALID;
+    if (argc < 2 || argc > 5) return DARGS_INVALID;
 
     if (IsValidPath(argv[1])) //filein
     {
@@ -307,7 +307,7 @@ int main(int argc, char* argv[]) {
         printf("Starting disassembly of \"%s\".\n", dargs.fname_in);
         if (DisassembleFile(file_in, stdout, &dargs.frange, dargs.dmode))
         {
-            printf("Successfully disassembled \"%s\".\n", dargs.fname_in);
+            printf("\nSuccessfully disassembled \"%s\".\n", dargs.fname_in);
         }
         else
         {
@@ -334,7 +334,7 @@ int main(int argc, char* argv[]) {
         printf("Starting disassembly of \"%s\".\n", dargs.fname_in);
         if (DisassembleFile(file_in, file_out, &dargs.frange, dargs.dmode))
         {
-            printf("Successfully disassembled \"%s\" to \"%s\".\n", dargs.fname_in, dargs.fname_out);
+            printf("\nSuccessfully disassembled \"%s\" to \"%s\".\n", dargs.fname_in, dargs.fname_out);
         }
         else
         {
