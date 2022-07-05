@@ -189,44 +189,6 @@ typedef enum {
 //todo: maybe put "2" instead of "nv" (or nothing) in the last one
 const u8 Conditions[CONDITIONS_MAX][3] = { "eq", "ne", "cs", "cc", "mi", "pl", "vs", "vc", "hi", "ls", "ge", "lt", "gt", "le", "", "" }; //last two are "al" and "nv", but never displayed
 
-//const u8 IT_xyz_0[CONDITIONS_MAX][4] = { //if then block suffixes
-//    "", //doesn't exist
-//    "ttt",
-//    "tt",
-//    "tte",
-//    "t",
-//    "tet",
-//    "te",
-//    "tee",
-//    "", //ommitted all
-//    "eee",
-//    "ee",
-//    "eet",
-//    "e",
-//    "ete",
-//    "et",
-//    "ett"
-//};
-
-//const u8 IT_xyz_1[CONDITIONS_MAX][4] = { //inverse of the one above
-//    "", //doesn't exist
-//    "eee",
-//    "ee",
-//    "eet",
-//    "e",
-//    "ete",
-//    "et",
-//    "ett",
-//    "", //ommitted all
-//    "tee",
-//    "te",
-//    "tet",
-//    "t",
-//    "tte",
-//    "tt",
-//    "ttt"
-//};
-
 const u8 AddressingModes[4][3] = {
     "da", //Decrement after
     "ia", //Increment after
@@ -296,9 +258,6 @@ const u8 DSP_Multiplies[4][6] = { "smla", "", "smlal", "smul" }; //slot 1 empty,
 const u8 MultiplyLong[4][6] = { "umull", "umlal", "smull", "smlal" };
 const u8 MovAddSubImmediate[4][4] = { "mov", "cmp", "add", "sub" }; //cmp won't be used
 const u8 LoadStoreRegister[8][6] = { "str", "strh", "strb", "ldrsb", "ldr", "ldrh", "ldrb", "ldrsh" };
-//const u8 CPS_effect[2][3] = { "ie", "id" };
-//const u8 CPS_flags[8][5] = { "none", "f", "i", "if", "a", "af", "ai", "aif" };
-//const u8 SignZeroExtend[4][5] = { "sxth", "sxtb", "uxth", "uxtb" };
 const u8 Shifters[4][4] = { "lsl", "lsr", "asr", "ror" }; //+rrx
 
 u32 debug_na_count = 0;
@@ -430,10 +389,6 @@ static int FormatExtraLoadStore(u32 c, u8* str, u8 cond, const u8* op) {
 
 static u32 Disassemble_thumb(u32 code, u8 str[STRING_LENGTH], ARMARCH tv) {
     /* Convert a code into a string, return size of the processed code (SIZE_16 or SIZE_32) */
-
-    //todo: refactor, follow documentation better
-    //todo: remove ARMv6 instructions
-    //todo: apparently, the "s" prefix (updating condition flags) is IMPLIED on all THUMB instructions, no need to add it like in ARM
 
     THUMBSIZE thumb_size = SIZE_16; //return value
     u16 c = code & 0xffff; //low 16 bits
