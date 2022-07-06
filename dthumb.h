@@ -433,7 +433,7 @@ static u32 Disassemble_thumb(u32 code, u8 str[STRING_LENGTH], ARMARCH tv) {
                 }
             }
         }
-        else //Shift by immediate: ASR (1)
+        else //Shift by immediate: LSL (1), LSR (1), ASR (1) 
         {
             size = sprintf(str, "%s r%u, r%u, #0x%X", ShiftImmediate[index], rd, rn, BITS(c, 6, 5));
         }
