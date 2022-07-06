@@ -23,7 +23,7 @@ static void Debug_DumpAllInstructions(void) {
 
     fclose(fp);
 
-    printf("N/A instructions remaining: %u (%u%% done)\n", debug_na_count, 100 - 100 * debug_na_count / 65536);
+    printf("N/A instructions: %u\n", debug_na_count);
 }
 
 /* COMMAND LINE UTILITY STRUCTS, ENUMS AND FUNCTIONS */
@@ -50,6 +50,7 @@ typedef struct {
     u8* fname_out;
     FILERANGE frange;
     DMODE dmode;
+    ARMARCH arch; //todo: implement
     u32 code;
 }DARGS;
 
@@ -61,25 +62,25 @@ static int GetFileSize_mine(FILE* fp) {
     return size;
 }
 
-static int DisassembleFile(FILE* in, FILE* out, FILERANGE* range, DMODE dmode) {
+static int DisassembleFile(FILE* in, FILE* out, DARGS* dargs) {
     /* Disassemble from a binary file, print to another file */
     int size = GetFileSize_mine(in);
-    if (range->start > size || range->end > size) return 0; //out of range
-    if (range->end == 0) range->end = size;
-    size = range->end - range->start;
+    if (dargs->frange.start > size || dargs->frange.end > size) return 0; //out of range
+    if (dargs->frange.end == 0) dargs->frange.end = size;
+    size = dargs->frange.end - dargs->frange.start;
     fprintf(out, "Disassembly of %u (0x%X) bytes:\n\n", size, size);
 
-    fseek(in, range->start, SEEK_SET);
+    fseek(in, dargs->frange.start, SEEK_SET);
 
-    if (dmode == DARM)
+    if (dargs->dmode == DARM)
     {
         for (int i = 0; i < size / 4; i++)
         {
             u8 str[STRING_LENGTH] = { 0 };
             u32 code = 0;
             fread(&code, 4, 1, in); //read 32 bits
-            Disassemble_arm(code, str, ARMv5TE);
-            fprintf(out, "%08X: %08X %s\n", range->start + i * 4, code, str);
+            Disassemble_arm(code, str, dargs->arch);
+            fprintf(out, "%08X: %08X %s\n", dargs->frange.start + i * 4, code, str);
         }
     }
     else //DTHUMB
@@ -89,15 +90,15 @@ static int DisassembleFile(FILE* in, FILE* out, FILERANGE* range, DMODE dmode) {
             u8 str[STRING_LENGTH] = { 0 };
             u32 code = 0;
             fread(&code, 4, 1, in); //prefetch 32 bits
-            if (Disassemble_thumb(code, str, ARMv5TE) == SIZE_32) //32-bit
+            if (Disassemble_thumb(code, str, dargs->arch) == SIZE_32) //32-bit
             {
-                fprintf(out, "%08X: %08X %s\n", range->start + i * 2, code, str);
+                fprintf(out, "%08X: %08X %s\n", dargs->frange.start + i * 2, code, str);
                 i++;
             }
             else //16-bit
             {
                 fseek(in, -2, SEEK_CUR); //go back 2 bytes
-                fprintf(out, "%08X: %04X     %s\n", range->start + i * 2, code & 0xffff, str);
+                fprintf(out, "%08X: %04X     %s\n", dargs->frange.start + i * 2, code & 0xffff, str);
             }
         }
     }
@@ -106,23 +107,23 @@ static int DisassembleFile(FILE* in, FILE* out, FILERANGE* range, DMODE dmode) {
     return 1; //success
 }
 
-static void DisassembleSingle(u32 code, DMODE dmode) {
+static void DisassembleSingle(DARGS* dargs) {
     /* Disassemble a single code and prints it to stdout */
     u8 str[STRING_LENGTH] = { 0 };
-    if (dmode == DARM)
+    if (dargs->dmode == DARM)
     {
-        Disassemble_arm(code, str, ARMv5TE);
-        printf("%08X %s\n", code, str);
+        Disassemble_arm(dargs->code, str, dargs->arch);
+        printf("%08X %s\n", dargs->code, str);
     }
     else
     {
-        if (Disassemble_thumb(code, str, ARMv5TE) == SIZE_32) //32-bit
+        if (Disassemble_thumb(dargs->code, str, dargs->arch) == SIZE_32) //32-bit
         {
-            printf("%08X %s\n", code, str);
+            printf("%08X %s\n", dargs->code, str);
         }
         else //16-bit
         {
-            printf("%04X     %s\n", code & 0xffff, str);
+            printf("%04X     %s\n", dargs->code & 0xffff, str);
         }
     }
 }
@@ -206,15 +207,49 @@ static int IfValidRangeSet(FILERANGE* range, u8* r) {
     return 1;
 }
 
-static int IfValidModeSet(DMODE* dmode, u8* m) {
+static int IfValidModeSet(DARGS* dargs, u8* m) {
     /* Only check first two chars to change from default DTHUMB to DARM mode */
-    if (!m || !m[0]) return 0; //needs to be at least one char
-    if (*(u16*)m == 0x612f) //"/a"
+    //todo: implement ARMARCH, default is /t5, ie. DMODE=DTHUMB and ARMARCH=ARMv5TE
+    //valid inputs: (/a, /a4, /a5), (/t, /t4, /t5, /4, /5) -> (/a, /a4), (/4)
+
+    if (!m || !m[0] || m[0] != '/') return 0; //needs to be at least one char, beggining with "/"
+    if (strlen(m) > 3) return 0; //can't have more than 3 printable characters
+
+    switch (*(u16*)(&m[1])) //treat as a 16-bit value to decode faster
     {
-        *dmode = DARM;
+    case 0x0061: //a
+    case 0x3561: //a5
+    {
+        dargs->dmode = DARM;
+        dargs->arch = ARMv5TE; //redundant
         return 1;
     }
-    return 0;
+    case 0x3461: //a4
+    {
+        dargs->dmode = DARM;
+        dargs->arch = ARMv4T;
+        return 1;
+    }
+    case 0x3474: //t4
+    case 0x0034: //4
+    {
+        dargs->dmode = DTHUMB; //redundant
+        dargs->arch = ARMv4T;
+        return 1;
+    }
+    case 0x0074: //t
+    case 0x0035: //5
+    case 0x3574: //t5
+    {
+        dargs->dmode = DTHUMB; //redundant
+        dargs->arch = ARMv5TE; //redundant
+        return 1;
+    }
+    default:
+    {
+        return 0; //invalid input
+    }
+    }
 }
 
 static int ParseCommandLineArguments(DARGS* dargs, int argc, char* argv[]) {
@@ -234,9 +269,9 @@ static int ParseCommandLineArguments(DARGS* dargs, int argc, char* argv[]) {
             dargs->fname_out = argv[2];
             if (IfValidRangeSet(&dargs->frange, argv[3]))
             {
-                IfValidModeSet(&dargs->dmode, argv[4]);
+                IfValidModeSet(dargs, argv[4]);
             }
-            else if (IfValidModeSet(&dargs->dmode, argv[3]))
+            else if (IfValidModeSet(dargs, argv[3]))
             {
                 IfValidRangeSet(&dargs->frange, argv[4]);
             }
@@ -246,9 +281,9 @@ static int ParseCommandLineArguments(DARGS* dargs, int argc, char* argv[]) {
         {
             if (IfValidRangeSet(&dargs->frange, argv[2]))
             {
-                IfValidModeSet(&dargs->dmode, argv[3]);
+                IfValidModeSet(dargs, argv[3]);
             }
-            else if (IfValidModeSet(&dargs->dmode, argv[2]))
+            else if (IfValidModeSet(dargs, argv[2]))
             {
                 IfValidRangeSet(&dargs->frange, argv[3]);
             }
@@ -257,7 +292,7 @@ static int ParseCommandLineArguments(DARGS* dargs, int argc, char* argv[]) {
     }
     else if (IfValidCodeSet(&dargs->code, argv[1])) //single code
     {
-        IfValidModeSet(&dargs->dmode, argv[2]);
+        IfValidModeSet(dargs, argv[2]);
         return DARGS_SINGLE;
     }
     return DARGS_INVALID;
@@ -281,7 +316,7 @@ int main(int argc, char* argv[]) {
     printf("Completion time: %.0f ms\n", (double)clock() - (double)start);
 #else
 
-    DARGS dargs = { NULL, NULL, {0}, DTHUMB };
+    DARGS dargs = { NULL, NULL, {0}, ARMv5TE, DTHUMB, 0 };
     DARGS_STATUS ds = ParseCommandLineArguments(&dargs, argc, argv);
 
     switch (ds)
@@ -293,7 +328,7 @@ int main(int argc, char* argv[]) {
     }
     case DARGS_SINGLE:
     {
-        DisassembleSingle(dargs.code, dargs.dmode);
+        DisassembleSingle(&dargs);
         break;
     }
     case DARGS_STDOUT:
@@ -305,7 +340,7 @@ int main(int argc, char* argv[]) {
             return 0; //terminate
         }
         printf("Starting disassembly of \"%s\".\n", dargs.fname_in);
-        if (DisassembleFile(file_in, stdout, &dargs.frange, dargs.dmode))
+        if (DisassembleFile(file_in, stdout, &dargs))
         {
             printf("\nSuccessfully disassembled \"%s\".\n", dargs.fname_in);
         }
@@ -332,7 +367,7 @@ int main(int argc, char* argv[]) {
         }
 
         printf("Starting disassembly of \"%s\".\n", dargs.fname_in);
-        if (DisassembleFile(file_in, file_out, &dargs.frange, dargs.dmode))
+        if (DisassembleFile(file_in, file_out, &dargs))
         {
             printf("\nSuccessfully disassembled \"%s\" to \"%s\".\n", dargs.fname_in, dargs.fname_out);
         }
