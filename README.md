@@ -6,7 +6,7 @@ Target processor: ARM946E-S (Nintendo DS main CPU) or ARM7TDMI (Nintendo DS seco
 
 ## Use as a library  
 Only call ``Disassemble_arm`` and ``Disassemble_thumb`` directly in your own code.  
-You need to provide a character buffer to these functions capable of holding at least 80 ASCII characters / bytes.  
+You need to provide a character buffer to these functions, capable of holding at least 80 ASCII characters / octets.  
 To access these functions, you need to include ``dthumb.h`` (and only this file) at the top of your own source file.
 ```
 #include "dthumb.h"
@@ -20,7 +20,7 @@ By default, the disassembly ``<mode>`` is THUMB for ARMv5TE, but you can use:
 - ``/a4``: ARM for ARMv4T  
 
 ### Disassemble from a file  
-Each file **needs** to have a valid extension (at least one "dot" character in the name, eg. ``mycode.bin``).
+Each file **needs** to have a valid extension (at least one "dot" character in the name, eg. ``mycode.bin``).  
 If no output file is provided, it will print to ``stdout``.  
 You can optionally provide a range of addresses to be disassembled (in hexadecimal).  
 ```
