@@ -581,18 +581,15 @@ static u32 Disassemble_thumb(u32 code, u8 str[STRING_LENGTH], ARMARCH tv) {
 
     case 4: //0x8000 //STR, LDR, STRH, LDRH
     {
-        if (BITS(c, 12, 1))
+        if (BITS(c, 12, 1)) //LDR (4), STR (3)
         {
-            if (tv >= ARMv5TE)
-            {
-                if (BITS(c, 11, 1)) size = sprintf(str, "ldr r%u, [sp, #0x%X]", BITS(c, 8, 3), 4 * BITS(c, 0, 8)); //LDR stack
-                else size = sprintf(str, "str r%u, [sp, #0x%X]", BITS(c, 8, 3), 4 * BITS(c, 0, 8)); //STR stack
-            }
+            u8* op = (BITS(c, 11, 1)) ? "ldr" : "str";
+            size = sprintf(str, "%s r%u, [sp, #0x%X]", op, BITS(c, 8, 3), 4 * BITS(c, 0, 8));
         }
-        else
+        else //LDRH (1), STRH (1)
         {
-            if (BITS(c, 11, 1)) size = sprintf(str, "ldrh r%u, [r%u, #0x%X]", BITS(c, 0, 3), BITS(c, 3, 3), 2 * BITS(c, 6, 5)); //LRDH immediate offset
-            else size = sprintf(str, "strh r%u, [r%u, #0x%X]", BITS(c, 0, 3), BITS(c, 3, 3), 2 * BITS(c, 6, 5)); //STRH immediate offset
+            u8* op = (BITS(c, 11, 1)) ? "ldrh" : "strh";
+            size = sprintf(str, "%s r%u, [r%u, #0x%X]", op, BITS(c, 0, 3), BITS(c, 3, 3), 2 * BITS(c, 6, 5));
         }
         break;
     }
@@ -680,32 +677,19 @@ static u32 Disassemble_thumb(u32 code, u8 str[STRING_LENGTH], ARMARCH tv) {
                 size = sprintf(str, "swi #0x%X", BITS(c, 0, 8));
                 break;
             }
-            default: //B conditional
+            default: //B (1) conditional
             {
                 size = sprintf(str, "b%s #0x%X", Conditions[BITS(c, 8, 4)], 4 + 2 * SIGNEX32_BITS(c, 0, 8));
             }
             }
         }
-        else //Load/store multiple
+        else //LDMIA/STMIA
         {
             u8 reglist[STRING_LENGTH] = { 0 };
-            u16 registers = BITS(c, 0, 8);
-            u8 rn = BITS(c, 8, 3);
-            if (BITS(c, 11, 1)) //LDMIA
+            u8* op = (BITS(c, 11, 1)) ? "ldmia" : "stmia";
+            if (FormatStringRegisterList_thumb(reglist, BITS(c, 0, 8), ""))
             {
-                if (FormatStringRegisterList_thumb(reglist, registers, ""))
-                {
-                    u8* e = (BITS(registers, rn, 1)) ? "" : "!"; //no '!' because rn is also in registers
-                    size = sprintf(str, "ldmia r%u%s, {%s}", rn, e, reglist);
-
-                }
-            }
-            else //STMIA
-            {
-                if (FormatStringRegisterList_thumb(reglist, registers, ""))
-                {
-                    size = sprintf(str, "stmia r%u!, {%s}", rn, reglist);
-                }
+                size = sprintf(str, "%s r%u!, {%s}", op, BITS(c, 8, 3), reglist);
             }
         }
         break;
@@ -730,7 +714,8 @@ static u32 Disassemble_thumb(u32 code, u8 str[STRING_LENGTH], ARMARCH tv) {
                 {
                 case 1: //BLX suffix
                 {
-                    if (!BITS(c, 0, 1) && (tv >= ARMv5TE))
+                    if (tv < ARMv5TE) break;
+                    if (!BITS(c, 0, 1))
                     {
                         thumb_size = SIZE_32;
                         u32 ofs = ((BITS((code & 0xffff), 0, 10) << 10) | (BITS(c, 1, 10))) << 2;
