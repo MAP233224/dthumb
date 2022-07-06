@@ -768,7 +768,7 @@ static u32 Disassemble_thumb(u32 code, u8 str[STRING_LENGTH], ARMARCH tv) {
 static void Disassemble_arm(u32 code, u8 str[STRING_LENGTH], ARMARCH av) {
     /**/
     //Reference: page 68 of 811 from the ARM Architecture reference manual june 2000 edition
-    //only supports ARMv5
+    //todo: proper support for ARMv4T 
     //todo: extra caution for UNPREDICTABLE instructions, need to remove them? or decode regardless?
 
     int size = 0; //return value of sprintf to be passed to CheckSpecialRegister
@@ -855,6 +855,7 @@ static void Disassemble_arm(u32 code, u8 str[STRING_LENGTH], ARMARCH av) {
                         if (ophi == 3) //Count leading zeroes (CLZ)
                         {
                             //note: if PC is in either register, UNPREDICTABLE
+                            if (av < ARMv5TE) break;
                             if (!BITS(c, 16, 4) || !BITS(c, 8, 4)) break; //Should-Be-One
                             size = sprintf(str, "clz%s r%u, r%u", Conditions[cond], BITS(c, 12, 4), BITS(c, 0, 4));
                         }
@@ -867,6 +868,7 @@ static void Disassemble_arm(u32 code, u8 str[STRING_LENGTH], ARMARCH av) {
                     }
                     case 1: //Branch and link/exchange instruction set (BLX)
                     {
+                        if (av < ARMv5TE) break;
                         if (ophi != 1) break;
                         if (BITS(c, 8, 12) != 0xfff) break; //Should-Be-One
                         size = sprintf(str, "blx%s r%u", Conditions[cond], BITS(c, 0, 4));
@@ -875,12 +877,14 @@ static void Disassemble_arm(u32 code, u8 str[STRING_LENGTH], ARMARCH av) {
                     case 2: //Enhanced DSP add/sub (QADD, QDADD, QSUB, QDSUB)
                     {
                         //note: if PC is in either register, UNPREDICTABLE
+                        if (av < ARMv5TE) break;
                         if (BITS(c, 8, 4)) break; //Should-Be-Zero
                         size = sprintf(str, "%s%s r%u, r%u, r%u", DSP_AddSub[ophi], Conditions[cond], BITS(c, 12, 4), BITS(c, 0, 4), BITS(c, 16, 4));
                         break;
                     }
                     case 3: //Software breakpoint (BKPT)
                     {
+                        if (av < ARMv5TE) break;
                         if (ophi != 1) break;
                         size = sprintf(str, "bkpt #0x%X", (BITS(c, 8, 12) << 4) | BITS(c, 0, 4));
                         break;
@@ -926,6 +930,7 @@ static void Disassemble_arm(u32 code, u8 str[STRING_LENGTH], ARMARCH av) {
             {
                 if (BITS(c, 7, 1)) //Enhanced DSP multiplies
                 {
+                    if (av < ARMv5TE) break;
                     //note: PC for any register is UNPREDICTABLE
                     u8 rm = BITS(c, 0, 4);
                     u8* x = BITS(c, 5, 1) ? "t" : "b";
@@ -1161,11 +1166,14 @@ static void Disassemble_arm(u32 code, u8 str[STRING_LENGTH], ARMARCH av) {
             u8* op = BITS(c, 20, 1) ? "mrrc" : "mcrr";
             size = sprintf(str, "%s%s p%u, #0x%X, r%u, r%u, c%u", op, Conditions[cond], BITS(c, 8, 4), BITS(c, 4, 4), BITS(c, 12, 4), BITS(c, 16, 4), BITS(c, 0, 4));
         }
-        else //LDC, STD -todo
+        else //LDC, STD
         {
+            //todo: reformat the cond checks into only 1
+            if (cond == NV && av < ARMv5TE) break;
+
             u8* op = BITS(c, 20, 1) ? "ldc" : "stc";
             u8* str_cond = (cond == NV) ? "2" : Conditions[cond]; //LDC2, STC2
-            u8* l = BITS(c, 22, 1) ? "l" : ""; //long //todo: need to place the "l" after ldc2 but between ldc and cond for example
+            u8* l = BITS(c, 22, 1) ? "l" : ""; //long
             u8 str_cond_long[8] = { 0 };
             if (cond == NV) sprintf(str_cond_long, "%s%s", str_cond, l);
             else sprintf(str_cond_long, "%s%s", l, str_cond);
