@@ -369,7 +369,7 @@ int main(int argc, char* argv[]) {
         printf("Starting disassembly of \"%s\".\n", dargs.fname_in);
         if (DisassembleFile(file_in, file_out, &dargs))
         {
-            printf("\nSuccessfully disassembled \"%s\" to \"%s\".\n", dargs.fname_in, dargs.fname_out);
+            printf("Successfully disassembled \"%s\" to \"%s\".\n", dargs.fname_in, dargs.fname_out);
         }
         else
         {
