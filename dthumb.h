@@ -205,10 +205,10 @@ const u8 DataProcessing_thumb[16][4] = {
     "adc",
     "sbc",
     "ror",
-    "tst", //no s
-    "rsb",
-    "cmp", //no s
-    "cmn", //no s
+    "tst",
+    "neg",
+    "cmp",
+    "cmn",
     "orr",
     "mul",
     "bic",
@@ -253,12 +253,24 @@ const u8 MSR_cxsf[16][5] = {
     "fsxc"
 };
 
+const u8 LoadStoreRegister[8][6] = {
+    "str", //STR (2)
+    "strh", //STRH (2)
+    "strb", //STRB (2)
+    "ldrsb", //LDRSB
+    "ldr", //LDR (2)
+    "ldrh", //LDRH (2)
+    "ldrb", //LDRB (2)
+    "ldrsh" //LDRSH
+};
+
 const u8 DSP_AddSub[4][6] = { "qadd", "qsub", "qdadd", "qdsub" };
 const u8 DSP_Multiplies[4][6] = { "smla", "", "smlal", "smul" }; //slot 1 empty, decided elsehow
 const u8 MultiplyLong[4][6] = { "umull", "umlal", "smull", "smlal" };
-const u8 MovAddSubImmediate[4][4] = { "mov", "cmp", "add", "sub" }; //cmp won't be used
-const u8 LoadStoreRegister[8][6] = { "str", "strh", "strb", "ldrsb", "ldr", "ldrh", "ldrb", "ldrsh" };
+const u8 AddCmpMovHighRegisters[3][4] = { "add", "cmp", "mov" };
+const u8 MovCmpAddSubImmediate[4][4] = { "mov", "cmp", "add", "sub" };
 const u8 Shifters[4][4] = { "lsl", "lsr", "asr", "ror" }; //+rrx
+const u8 ShiftImmediate[4][4] = { "lsl", "lsr", "asr", "" }; //thumb
 
 u32 debug_na_count = 0;
 
@@ -398,155 +410,88 @@ static u32 Disassemble_thumb(u32 code, u8 str[STRING_LENGTH], ARMARCH tv) {
     {
     case 0: //0x0000 //LSL, LSR, ASR, ADD, SUB
     {
-        switch (BITS(c, 11, 2))
+        u8 rd = BITS(c, 0, 3);
+        u8 rn = BITS(c, 3, 3);
+        u8 index = BITS(c, 11, 2);
+        if (index == 3) //ADD, SUB, MOV
         {
-        case 0:
-        {
-            if (tv >= ARMv5TE)
+            if (BITS(c, 6, 5) == 16) //MOV (2) (technically ADD (1) with imm==0)
             {
-                if (BITS(c, 6, 5)) //LSL immediate
+                size = sprintf(str, "mov, r%u, r%u", rd, rn);
+            }
+            else
+            {
+                u8 rm_imm = BITS(c, 6, 3);
+                u8* op = (BITS(c, 9, 1)) ? "sub" : "add";
+                if (BITS(c, 10, 1)) //ADD (1), SUB (1) -immediate
                 {
-                    size = sprintf(str, "lsl r%u, r%u, #0x%X", BITS(c, 0, 3), BITS(c, 3, 3), BITS(c, 6, 5));
+                    size = sprintf(str, "%s r%u, r%u, #0x%X", op, rd, rn, rm_imm);
                 }
-                else //MOV register
+                else //ADD (3), SUB (3) -register
                 {
-                    size = sprintf(str, "mov r%u, r%u", BITS(c, 0, 3), BITS(c, 3, 3));
+                    size = sprintf(str, "%s r%u, r%u, r%u", op, rd, rn, rm_imm);
                 }
             }
-            else //ARMv4T
-            {
-                size = sprintf(str, "lsl r%u, r%u, #0x%X", BITS(c, 0, 3), BITS(c, 3, 3), BITS(c, 6, 5));
-            }
-            break;
         }
-        case 1: //LSR immediate
+        else //Shift by immediate: ASR (1)
         {
-            size = sprintf(str, "lsr r%u, r%u, #0x%X", BITS(c, 0, 3), BITS(c, 3, 3), BITS(c, 6, 5));
-            break;
-        }
-        case 2: //ASR immediate
-        {
-            size = sprintf(str, "asr r%u, r%u, #0x%X", BITS(c, 0, 3), BITS(c, 3, 3), BITS(c, 6, 5));
-            break;
-        }
-        case 3: //ADD, SUB
-        {
-            if (BITS(c, 10, 1)) //ADD/SUB immediate
-            {
-                if (BITS(c, 9, 1)) //SUB immediate
-                {
-                    size = sprintf(str, "sub r%u, r%u, #0x%X", BITS(c, 0, 3), BITS(c, 3, 3), BITS(c, 6, 3));
-                }
-                else //ADD immediate
-                {
-                    size = sprintf(str, "add r%u, r%u, #0x%X", BITS(c, 0, 3), BITS(c, 3, 3), BITS(c, 6, 3));
-                }
-            }
-            else //ADD/SUB register
-            {
-                if (BITS(c, 9, 1)) //SUB register
-                {
-                    size = sprintf(str, "sub r%u, r%u, r%u", BITS(c, 0, 3), BITS(c, 3, 3), BITS(c, 6, 3));
-                }
-                else //ADD register
-                {
-                    size = sprintf(str, "add r%u, r%u, r%u", BITS(c, 0, 3), BITS(c, 3, 3), BITS(c, 6, 3));
-                }
-            }
-            break;
-        }
+            size = sprintf(str, "%s r%u, r%u, #0x%X", ShiftImmediate[index], rd, rn, BITS(c, 6, 5));
         }
         break;
     }
 
-    case 1: //0x2000 //MOV CMP, ADD, SUB
+    case 1: //0x2000 //MOV (1), CMP (1), ADD (2), SUB (2)
     {
-        u8 index = BITS(c, 11, 2);
-        if (index == 1) //CMP
-        {
-            size = sprintf(str, "cmp r%u, #0x%X", BITS(c, 8, 3), BITS(c, 0, 8));
-        }
-        else
-        {
-            size = sprintf(str, "%s r%u, #0x%X", MovAddSubImmediate[index], BITS(c, 8, 3), BITS(c, 0, 8));
-        }
+        size = sprintf(str, "%s r%u, #0x%X", MovCmpAddSubImmediate[BITS(c, 11, 2)], BITS(c, 8, 3), BITS(c, 0, 8));
         break;
     }
 
     case 2: //0x4000 //lots...
     {
-        if (BITS(c, 10, 3) == 1)
+        switch (BITS(c, 10, 3))
         {
-            switch (BITS(c, 8, 2))
-            {
-            case 0: //ADD register
-            {
-                if (tv >= ARMv5TE)
-                {
-                    u8 d = (BITS(c, 7, 1) << 3) | (BITS(c, 0, 3));
-                    u8 m = BITS(c, 3, 4);
-                    if (m == 13) size = sprintf(str, "add r%u, sp, r%u", d, d); //ADD sp + register v1
-                    else size = sprintf(str, "add r%u, r%u", d, m); //ADD
-                }
-                break;
-            }
-            case 1: //CMP high register
-            {
-                if (tv >= ARMv5TE)
-                {
-                    size = sprintf(str, "cmp r%u, r%u", (BITS(c, 7, 1) << 3) | (BITS(c, 0, 3)), BITS(c, 3, 4));
-                }
-                break;
-            }
-            case 2: //MOV register
-            {
-                size = sprintf(str, "mov r%u, r%u", (BITS(c, 7, 1) << 3) | (BITS(c, 0, 3)), BITS(c, 3, 4));
-                break;
-            }
-            case 3:
+        case 0: //Data-processing registers
+        {
+            size = sprintf(str, "%s r%u, r%u", DataProcessing_thumb[BITS(c, 6, 4)], BITS(c, 0, 3), BITS(c, 3, 3));
+            break;
+        }
+        case 1: //Special data processing
+        {
+            u8 rd = (BITS(c, 7, 1) << 3) | (BITS(c, 0, 3));
+            u8 rm = BITS(c, 3, 4);
+            u8 op = BITS(c, 8, 2);
+            if (op == 3) //Branch/exchange instruction set
             {
                 if (BITS(c, 0, 3)) break; //Should-Be-Zero
-                if (BITS(c, 7, 1))
+                if (BITS(c, 7, 1)) //BLX (2)
                 {
                     if (tv < ARMv5TE) break; //UNPREDICTABLE prior to ARM version 5
-                    size = sprintf(str, "blx r%u", BITS(c, 3, 4)); //BLX
+                    size = sprintf(str, "blx r%u", rm);
                 }
-                else
+                else //BX
                 {
-                    size = sprintf(str, "bx r%u", BITS(c, 3, 4)); //BX
+                    size = sprintf(str, "bx r%u", rm);
                 }
-                break;
             }
+            else //ADD (4), CMP (3), MOV (3)
+            {
+                if (!BITS(c, 6, 2)) break; //UNPREDICTABLE
+                size = sprintf(str, "%s r%u, r%u", AddCmpMovHighRegisters[op], rd, rm);
             }
+            break;
         }
-        else if (!BITS(c, 10, 3))
-        {
-            u8 index = BITS(c, 6, 4);
-            switch (index)
-            {
-            case 8:
-            case 10:
-            case 11:
-            {
-                size = sprintf(str, "%s r%u, r%u", DataProcessing_thumb[index], BITS(c, 0, 3), BITS(c, 3, 3));
-                break;
-            }
-            default:
-            {
-                size = sprintf(str, "%s r%u, r%u", DataProcessing_thumb[index], BITS(c, 0, 3), BITS(c, 3, 3));
-            }
-            }
-        }
-        else
+        default: //Load from literal pool, Load/Store register offset
         {
             if (BITS(c, 12, 1)) //Load/store register offset
             {
                 size = sprintf(str, "%s r%u, [r%u, r%u]", LoadStoreRegister[BITS(c, 9, 3)], BITS(c, 0, 3), BITS(c, 3, 3), BITS(c, 6, 3));
             }
-            else //LDR literal pool
+            else //LDR (3)
             {
+                if (!BITS(c, 11, 1)) break; //Should-Be-One
                 size = sprintf(str, "ldr r%u, [pc, #0x%X]", BITS(c, 8, 3), 4 * BITS(c, 0, 8));
             }
+        }
         }
         break;
     }
@@ -555,22 +500,22 @@ static u32 Disassemble_thumb(u32 code, u8 str[STRING_LENGTH], ARMARCH tv) {
     {
         switch (BITS(c, 11, 2))
         {
-        case 0: //STR
+        case 0: //STR (1)
         {
             size = sprintf(str, "str r%u, [r%u, #0x%X]", BITS(c, 0, 3), BITS(c, 3, 3), 4 * BITS(c, 6, 5));
             break;
         }
-        case 1: //LDR
+        case 1: //LDR (1)
         {
             size = sprintf(str, "ldr r%u, [r%u, #0x%X]", BITS(c, 0, 3), BITS(c, 3, 3), 4 * BITS(c, 6, 5));
             break;
         }
-        case 2: //STRB
+        case 2: //STRB (1)
         {
             size = sprintf(str, "strb r%u, [r%u, #0x%X]", BITS(c, 0, 3), BITS(c, 3, 3), BITS(c, 6, 5));
             break;
         }
-        case 3: //LDRB
+        case 3: //LDRB (1)
         {
             size = sprintf(str, "ldrb r%u, [r%u, #0x%X]", BITS(c, 0, 3), BITS(c, 3, 3), BITS(c, 6, 5));
             break;
