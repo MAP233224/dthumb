@@ -1,6 +1,6 @@
 /*
 
-Target CPU: ARM946E-S (Nintendo DS main CPU) and ARM7TDMI (Nintendo DS secondary CPU)
+Target CPU: ARM946E-S (Nintendo DS main CPU) and ARM7TDMI (Nintendo DS secondary CPU, Nintendo GBA main CPU)
 Target Architecture: ARMv5TE and ARMv4T
 ARM version: 5, 4
 THUMB version: 2, 1
@@ -314,44 +314,123 @@ static void CheckSpecialRegister(u8* str, int size) {
     }
 }
 
-static u32 FormatStringRegisterList_thumb(u8 str[STRING_LENGTH], u16 reg, const u8 pclr[3]) {
-    /**/
-    //todo: group consecutive registers together with a -
-    u32 bits = 0;
+static u32 FormatStringRegisterList_thumb(u8 str[STRING_LENGTH], u16 reg, const u8* pclr, u8 pclr_size) {
+    /* Format str according to the reg bifield, group consecutive registers together */
+    /* Support for a special 9th register name */
+    u32 bits = 0; //return value, number of 1 bits in reg
+    u32 streak = 0; //current streak, used to group registers together
     u32 pos = 0; //position in the str array
-    for (u32 i = 0; i < 9; i++) //9 instead of 16 because of clever grouping
+    u8 tmp[4] = { 0 }; //temporary buffer for register write
+    for (u32 i = 0; i < 9; i++) //reg is a 9-bit value
     {
         if (BITS(reg, i, 1))
         {
             bits++;
-            u8 tmp[4] = { 0 };
-            if (i == 8) sprintf(tmp, pclr, i); //pc or lr
-            else sprintf(tmp, "r%u,", i); //r0-r7
-            memcpy(&str[pos], tmp, sizeof(tmp));
-            pos += 3; //depends on size of tmp
+            switch (streak)
+            {
+            case 0: //streak ended, print current register
+            {
+                if (i == 8)
+                {
+                    sprintf(tmp, pclr); //pc or lr override
+                    memcpy(&str[pos], tmp, sizeof(tmp)); //write
+                    pos += pclr_size; //sizeof(pclr)
+                }
+                else
+                {
+                    sprintf(tmp, "r%u,", i); //r0-r7
+                    memcpy(&str[pos], tmp, sizeof(tmp)); //write
+                    pos += 3; //sizeof("r0")
+                }
+                break;
+            }
+            case 1: break; //used to catch default cases later
+            case 2: //hyphenation if at least 3 in a row
+            {
+                str[pos - 1] = '-'; //replaces the comma
+                break;
+            }
+            default:
+            {
+                //todo: a bit repetitive, tidy up
+                if (i == 8) //if on last bit, close the current streak by writing previous and last register 
+                {
+                    sprintf(tmp, "r%u,", i - 1); //previous register (can't be LR/PC)
+                    memcpy(&str[pos], tmp, sizeof(tmp)); //write
+                    pos += 3; //depends on size of tmp
+                    sprintf(tmp, pclr); //pc or lr override
+                    memcpy(&str[pos], tmp, sizeof(tmp)); //write
+                    pos += pclr_size; //sizeof(pclr)
+                }
+            }
+            }
+            streak = (i < 8) ? streak + 1 : 0; //avoids grouping LR/PC
+        }
+        else
+        {
+            if (streak > 1) //if broke with at least 3 in a row, close
+            {
+                sprintf(tmp, "r%u,", i - 1); //previous register (can't be LR/PC)
+                memcpy(&str[pos], tmp, sizeof(tmp)); //write
+                pos += 3; //depends on size of tmp
+            }
+            streak = 0; //reset
         }
     }
-    if (pos) str[pos - 1] = 0; //removes the coma on the last register
+    if (pos) str[pos - 1] = 0; //removes the coma on the last register   
     return bits; //number of 1 bits
 }
 
 static u32 FormatStringRegisterList_arm(u8 str[STRING_LENGTH], u16 reg) {
-    /**/
-    //todo: group consecutive registers together with a -
-    u32 bits = 0;
+    /* Format str according to the reg bifield, group consecutive registers together */
+    u32 bits = 0; //return value, number of 1 bits in reg
+    u32 streak = 0; //current streak, used to group registers together
     u32 pos = 0; //position in the str array
+    u8 tmp[5] = { 0 }; //temporary buffer for register write
     for (u32 i = 0; i < 16; i++) //all registers
     {
         if (BITS(reg, i, 1))
         {
             bits++;
-            u8 tmp[5] = { 0 };
-            sprintf(tmp, "r%u,", i);
-            memcpy(&str[pos], tmp, sizeof(tmp));
-            pos = (i < 10) ? pos + 3 : pos + 4;
+            switch (streak)
+            {
+            case 0: //streak started, print current register
+            {
+                sprintf(tmp, "r%u,", i); //r0-r15
+                memcpy(&str[pos], tmp, sizeof(tmp)); //write
+                pos = (i < 10) ? pos + sizeof("r0") : pos + sizeof("r10");
+                break;
+            }
+            case 1: break;
+            case 2: //hyphenation if at least 3 in a row
+            {
+                str[pos - 1] = '-'; //replaces the comma
+                break;
+            }
+            default:
+            {
+                if (i == 15) //if on last bit, close the current streak by writing last register 
+                {
+                    str[pos++] = 'p';
+                    str[pos++] = 'c';
+                    str[pos++] = ','; //comma will get deleted later
+                }
+            }
+            }
+            streak++;
+        }
+        else
+        {
+            if (streak > 1) //if broke with at least 3 in a row, close
+            {
+                sprintf(tmp, "r%u,", i - 1); //previous register
+                memcpy(&str[pos], tmp, sizeof(tmp)); //write
+                pos = (i - 1 < 10) ? pos + sizeof("r0") : pos + sizeof("r10");
+            }
+            streak = 0; //reset
         }
     }
-    if (pos) str[pos - 1] = 0; //removes the coma on the last register
+    if (pos) str[pos - 1] = 0; //removes the coma on the last register   
     return bits; //number of 1 bits
 }
 
@@ -568,14 +647,14 @@ static u32 Disassemble_thumb(u32 code, u8 str[STRING_LENGTH], ARMARCH tv) {
                 u16 registers = BITS(c, 0, 9);
                 if (BITS(c, 11, 1)) //POP
                 {
-                    if (FormatStringRegisterList_thumb(reglist, registers, "pc")) //if BitCount(registers) < 1 then UNPREDICTABLE
+                    if (FormatStringRegisterList_thumb(reglist, registers, "pc", sizeof("pc"))) //if BitCount(registers) < 1 then UNPREDICTABLE
                     {
                         size = sprintf(str, "pop {%s}", reglist);
                     }
                 }
                 else //PUSH
                 {
-                    if (FormatStringRegisterList_thumb(reglist, registers, "lr")) //if BitCount(registers) < 1 then UNPREDICTABLE
+                    if (FormatStringRegisterList_thumb(reglist, registers, "lr", sizeof("lr"))) //if BitCount(registers) < 1 then UNPREDICTABLE
                     {
                         size = sprintf(str, "push {%s}", reglist);
                     }
@@ -632,7 +711,7 @@ static u32 Disassemble_thumb(u32 code, u8 str[STRING_LENGTH], ARMARCH tv) {
         {
             u8 reglist[STRING_LENGTH] = { 0 };
             u8* op = (BITS(c, 11, 1)) ? "ldmia" : "stmia";
-            if (FormatStringRegisterList_thumb(reglist, BITS(c, 0, 8), ""))
+            if (FormatStringRegisterList_thumb(reglist, BITS(c, 0, 8), "", 0))
             {
                 size = sprintf(str, "%s r%u!, {%s}", op, BITS(c, 8, 3), reglist);
             }
