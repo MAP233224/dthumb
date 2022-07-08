@@ -862,7 +862,7 @@ static void Disassemble_arm(u32 code, u8 str[STRING_LENGTH], ARMARCH av) {
                     {
                     case 0:
                     {
-                        if (ophi == 3) //Count leading zeroes (CLZ)
+                        if (ophi == 3) //CLZ
                         {
                             //note: if PC is in either register, UNPREDICTABLE
                             if (av < ARMv5TE) break;
@@ -876,7 +876,7 @@ static void Disassemble_arm(u32 code, u8 str[STRING_LENGTH], ARMARCH av) {
                         }
                         break;
                     }
-                    case 1: //Branch and link/exchange instruction set (BLX)
+                    case 1: //BLX (2)
                     {
                         if (av < ARMv5TE) break;
                         if (ophi != 1) break;
@@ -1150,7 +1150,7 @@ static void Disassemble_arm(u32 code, u8 str[STRING_LENGTH], ARMARCH av) {
     }
     case 5: //Branch instructions
     {
-        if (cond == NV) //BLX
+        if (cond == NV && av >= ARMv5TE) //BLX (1)
         {
             size = sprintf(str, "blx #0x%X", 8 + 4 * SIGNEX32_BITS(c, 0, 24) + 2 * BITS(c, 24, 1));
         }
@@ -1167,8 +1167,9 @@ static void Disassemble_arm(u32 code, u8 str[STRING_LENGTH], ARMARCH av) {
         }
         break;
     }
-    case 6: //todo: Coprocessor load/store, Double register transfers 
+    case 6: //Coprocessor load/store, Double register transfers 
     {
+        if (av < ARMv5TE) break;
         //if (cond == NV) break; //only unpredictable prior to ARMv5
         if (BITS(c, 21, 4) == 2) //MCRR, MRRC
         {
@@ -1176,7 +1177,7 @@ static void Disassemble_arm(u32 code, u8 str[STRING_LENGTH], ARMARCH av) {
             u8* op = BITS(c, 20, 1) ? "mrrc" : "mcrr";
             size = sprintf(str, "%s%s p%u, #0x%X, r%u, r%u, c%u", op, Conditions[cond], BITS(c, 8, 4), BITS(c, 4, 4), BITS(c, 12, 4), BITS(c, 16, 4), BITS(c, 0, 4));
         }
-        else //LDC, STD
+        else //LDC, STC
         {
             //todo: reformat the cond checks into only 1
             if (cond == NV && av < ARMv5TE) break;
@@ -1227,6 +1228,8 @@ static void Disassemble_arm(u32 code, u8 str[STRING_LENGTH], ARMARCH av) {
         }
         else
         {
+            if (cond == NV && av < ARMv5TE) break;
+
             u8 crn = BITS(c, 16, 4);
             u8 p = BITS(c, 8, 4);
             u8 rd_crd = BITS(c, 12, 4);
