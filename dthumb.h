@@ -128,6 +128,11 @@ SWI         Software Interrupt
 TST         Test
 */
 
+/* INCLUDE GUARD */
+
+#ifndef DTHUMB_H
+#define DTHUMB_H
+
 /* INCLUDES */
 
 #include <stdio.h>
@@ -1290,3 +1295,5 @@ static void Disassemble_arm(u32 code, u8 str[STRING_LENGTH], ARMARCH av) {
         CheckSpecialRegister(str, size); //formatting of SP, LR, PC
     }
 }
+
+#endif // !DTHUMB_H
