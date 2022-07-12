@@ -1,33 +1,5 @@
 #include "dthumb.h"
 
-/* DEBUG FUNCTIONS */
-
-static void Debug_DisassembleCode_arm(u32 c) {
-    /* Debug: disassemble a single ARM instruction from the ARMv5TE architecture */
-    u8 s[STRING_LENGTH] = { 0 };
-    Disassemble_arm(c, s, ARMv5TE);
-    printf("%08X -> %s\n", c, s);
-}
-
-static void Debug_DumpAllInstructions(void) {
-    /* Debug: call only when you want to dump the complete THUMB instruction set to a file */
-
-    FILE* fp = fopen("ARMv5TE_THUMB_instruction_set.txt", "w+");
-
-    for (u32 code = 0; code <= 0xffff; code++)
-    {
-        u8 str[STRING_LENGTH] = { 0 };
-        Disassemble_thumb(code, str, ARMv5TE);
-        fprintf(fp, "%04X %s\n", code, str);
-    }
-
-    fclose(fp);
-
-    printf("N/A instructions: %u\n", debug_na_count);
-}
-
-/* COMMAND LINE UTILITY STRUCTS, ENUMS AND FUNCTIONS */
-
 typedef enum {
     DARM,
     DTHUMB
@@ -50,7 +22,7 @@ typedef struct {
     u8* fname_out;
     FILERANGE frange;
     DMODE dmode;
-    ARMARCH arch; //todo: implement
+    ARMARCH arch;
     u32 code;
 }DARGS;
 
@@ -209,7 +181,6 @@ static int IfValidRangeSet(FILERANGE* range, u8* r) {
 
 static int IfValidModeSet(DARGS* dargs, u8* m) {
     /* Only check first two chars to change from default DTHUMB to DARM mode */
-    //todo: implement ARMARCH, default is /t5, ie. DMODE=DTHUMB and ARMARCH=ARMv5TE
     //valid inputs: (/a, /a4, /a5), (/t, /t4, /t5, /4, /5) -> (/a, /a4), (/4)
 
     if (!m || !m[0] || m[0] != '/') return 0; //needs to be at least one char, beggining with "/"
@@ -305,15 +276,21 @@ int main(int argc, char* argv[]) {
     clock_t start = clock();
 
 #ifdef DEBUG
-    //Debug_DumpAllInstructions();
-    Debug_DisassembleCode_arm(0xfd40d1ff);
-    //u32 i = 0;
-    //while (++i != 0xffffff) //4654 ms with variable size, 5137 ms with size == 64
-    //{
-    //    Debug_DisassembleCode_arm(i);
-    //}
-    //printf("%u n/a instructions, %.2f%% complete.\n", debug_na_count, 100 - (100 * (float)debug_na_count / (float)0x100000000));
-    printf("Completion time: %.0f ms\n", (double)clock() - (double)start);
+    /* Performance test */
+    FILE* fdebug = fopen("fdebug.txt", "w+");
+    printf("Performance test started.\n");
+    u32 i = 0;
+    do
+    {
+        u8 s[STRING_LENGTH] = { 0 };
+        Disassemble_arm(i, s, ARMv5TE);
+        //Disassemble_thumb(i, s, ARMv5TE);
+        //fprintf(fdebug, "%08X %s\n", i, s);
+
+        if (!(i & 0xfffffff)) printf("%08X\n", i);
+
+    } while (++i);
+    fclose(fdebug);
 #else
 
     DARGS dargs = { NULL, NULL, {0}, ARMv5TE, DTHUMB, 0 };
