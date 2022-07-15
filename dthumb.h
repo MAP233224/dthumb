@@ -1159,16 +1159,10 @@ static void Disassemble_arm(u32 code, u8 str[STRING_LENGTH], ARMARCH av) {
         {
             size = sprintf(str, "blx #0x%X", 8 + 4 * SIGNEX32_BITS(c, 0, 24) + 2 * BITS(c, 24, 1));
         }
-        else //Branch and branch with link
+        else //B, BL
         {
-            if (BITS(c, 24, 1)) //BL
-            {
-                size = sprintf(str, "bl #0x%X", 8 + 4 * SIGNEX32_BITS(c, 0, 24));
-            }
-            else //B
-            {
-                size = sprintf(str, "b #0x%X", 8 + 4 * SIGNEX32_BITS(c, 0, 24));
-            }
+            u8* l = (BITS(c, 24, 1)) ? "l" : "";
+            size = sprintf(str, "b%s%s #0x%X", l, Conditions[cond], 8 + 4 * SIGNEX32_BITS(c, 0, 24));
         }
         break;
     }
