@@ -1143,14 +1143,8 @@ static void Disassemble_arm(u32 code, u8 str[STRING_LENGTH], ARMARCH av) {
         u8* w = BITS(c, 21, 1) ? "!" : ""; //W bit
         u8* s = BITS(c, 22, 1) ? "^" : ""; //S bit
         u8 am = BITS(c, 23, 2); //PU bits
-        if (BITS(c, 20, 1)) //LDM
-        {
-            size = sprintf(str, "ldm%s%s r%u%s, {%s}%s", Conditions[cond], AddressingModes[am], rn, w, reglist, s);
-        }
-        else //STM
-        {
-            size = sprintf(str, "stm%s%s r%u%s, {%s}%s", Conditions[cond], AddressingModes[am], rn, w, reglist, s);
-        }
+        u8* op = (BITS(c, 20, 1)) ? "ldm" : "stm"; //LDM or STM
+        size = sprintf(str, "%s%s%s r%u%s, {%s}%s", op, AddressingModes[am], Conditions[cond], rn, w, reglist, s);
         break;
     }
     case 5: //Branch instructions
