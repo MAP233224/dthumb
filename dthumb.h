@@ -629,17 +629,10 @@ static u32 Disassemble_thumb(u32 code, u8 str[STRING_LENGTH], ARMARCH tv) {
         {
             switch (BITS(c, 8, 4))
             {
-            case 0: //ADD/SUB SP
+            case 0: //ADD (4), SUB (7) to/from SP
             {
-                if (BITS(c, 7, 4)) break; //Should-Be-Zero
-                if (BITS(c, 7, 1))
-                {
-                    size = sprintf(str, "sub sp, #0x%X", 4 * BITS(c, 0, 7)); //SUB (4)        
-                }
-                else
-                {
-                    size = sprintf(str, "add sp, #0x%X", 4 * BITS(c, 0, 7)); //ADD (7)
-                }
+                u8* op = (BITS(c, 7, 1)) ? "sub" : "add";
+                size = sprintf(str, "%s sp, #0x%X", op, 4 * BITS(c, 0, 7));
                 break;
             }
             //PUSH/POP
@@ -676,16 +669,10 @@ static u32 Disassemble_thumb(u32 code, u8 str[STRING_LENGTH], ARMARCH tv) {
             }
             }
         }
-        else //ADD to SP or PC
+        else //ADD (5), ADD (6) to SP or PC
         {
-            if (BITS(c, 11, 2)) //ADD (6): ADD <Rd>, SP, #<imm_8> * 4
-            {
-                size = sprintf(str, "add r%u, sp, #0x%X", BITS(c, 8, 3), 4 * BITS(c, 0, 8));
-            }
-            else //ADD (5): ADD <Rd>, PC, #<imm_8> * 4
-            {
-                size = sprintf(str, "add r%u, pc, #0x%X", BITS(c, 8, 3), 4 * BITS(c, 0, 8));
-            }
+            u8* sppc = (BITS(c, 11, 2)) ? "sp" : "pc";
+            size = sprintf(str, "add r%u, %s, #0x%X", BITS(c, 8, 3), sppc, 4 * BITS(c, 0, 8));
         }
         break;
     }
