@@ -131,6 +131,8 @@ static int IfValidRangeSet(FILERANGE* range, u8* r) {
     //"--X" //unspecified start (default to beginning of file, 0) to end
     //"X--" //start to unspecified end (default to end of file)
 
+    //todo: new acceptable format: <start>:<size>
+
     u32 start = 0;
     u32 end = 0;
     u32 valid = 0;
@@ -146,12 +148,16 @@ static int IfValidRangeSet(FILERANGE* range, u8* r) {
         i++;
     }
 
-    if (*(u16*)str == 0x2d2d) //detect double dash
+    switch (*(u16*)str)
+    {
+    case 0x2d2d: //-- detect double dash
+    case 0x3a2d: //-: detect size
     {
         end = strtol(&str[2], NULL, 16);
         valid = 1;
+        break;
     }
-    else
+    default: //go through the string
     {
         for (u32 j = 0; j < i; j++)
         {
@@ -162,7 +168,15 @@ static int IfValidRangeSet(FILERANGE* range, u8* r) {
                 valid = 1;
                 break;
             }
+            else if (str[j] == ':') //start + size
+            {
+                start = strtol(str, NULL, 16);
+                end = start + strtol(&str[j + 1], NULL, 16);
+                valid = 1;
+                break;
+            }
         }
+    }
     }
 
     if (!valid) return 0;
