@@ -24,8 +24,8 @@ Each file **needs** to have a valid extension (at least one "dot" character in t
 If no output file is provided, it will print to ``stdout``.  
 You can optionally provide a range of addresses to be disassembled (in hexadecimal).  
 ```
-dthumb <filein> {<fileout>} {<start>-<end>} {<mode>}
-```  
+dthumb <filein> {<fileout>} {<start>-<end> | <start>:<size>} {<mode>}
+```
 
 ### Disassemble a single code  
 The code needs to be written in hexadecimal format.  
