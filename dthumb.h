@@ -728,23 +728,33 @@ static u32 Disassemble_thumb(u32 code, u8 str[STRING_LENGTH], ARMARCH tv) {
             {
                 switch (BITS(c, 11, 2))
                 {
-                case 1: //BLX suffix
+                case 1: //BLX (1)
                 {
                     if (tv < ARMv5TE) break;
                     if (!BITS(c, 0, 1))
                     {
                         thumb_size = SIZE_32;
-                        u32 ofs = ((BITS((code & 0xffff), 0, 10) << 10) | (BITS(c, 1, 10))) << 2;
-                        size = sprintf(str, "blx #0x%X", 4 + SIGNEX32_VAL(ofs, 22));
+
+                        int ofs = (BITS((code & 0xffff), 0, 11)) << 12;
+                        ofs = SIGNEX32_VAL(ofs, 23);
+                        ofs += 4;
+                        ofs += 2 * BITS(c, 0, 11);
+                        //note: bit 1 should be cleared (word aligned target address)
+                        size = sprintf(str, "blx #0x%X", ofs);
                     }
                     break;
                 }
                 //case 2: break; //BL/BLX prefix
-                case 3: //BL suffix
+                case 3: //BL
                 {
                     thumb_size = SIZE_32;
-                    u32 ofs = ((BITS((code & 0xffff), 0, 10) << 11) | (BITS(c, 0, 11))) << 1;
-                    size = sprintf(str, "bl #0x%X", 4 + (int)SIGNEX32_VAL(ofs, 22));
+
+                    int ofs = (BITS((code & 0xffff), 0, 11)) << 12;
+                    ofs = SIGNEX32_VAL(ofs, 23);
+                    ofs += 4;
+                    ofs += 2 * BITS(c, 0, 11);
+
+                    size = sprintf(str, "bl #0x%X", ofs);
                     break;
                 }
                 }
