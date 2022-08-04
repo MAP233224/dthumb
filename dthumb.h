@@ -501,7 +501,7 @@ static u32 Disassemble_thumb(u32 code, u8 str[STRING_LENGTH], ARMARCH tv) {
         {
             if (BITS(c, 6, 5) == 16) //MOV (2) (technically ADD (1) with imm==0)
             {
-                size = sprintf(str, "mov, r%u, r%u", rd, rn);
+                size = sprintf(str, "mov r%u, r%u", rd, rn);
             }
             else
             {
