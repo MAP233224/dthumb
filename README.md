@@ -6,7 +6,7 @@ Target processor: ARM946E-S (Nintendo DS main CPU) or ARM7TDMI (Nintendo DS seco
 
 ## Use as a library  
 Only call ``Disassemble_arm`` and ``Disassemble_thumb`` directly in your own code.  
-You need to provide a character buffer to these functions, capable of holding at least 80 ASCII characters / octets.  
+You need to provide a character buffer to these functions, capable of holding at least 80 ASCII characters / bytes / octets.  
 To access these functions, you need to include ``dthumb.h`` (and only this file) at the top of your own source file.
 ```
 #include "dthumb.h"
@@ -32,3 +32,6 @@ The code needs to be written in hexadecimal format.
 ```
 dthumb <code> {<mode>}
 ```
+
+## Current implementations
+dthumb is part of the [Bizhawk emulator](https://gitlab.com/TASVideos/BizHawk/pipelines/master/latest)
