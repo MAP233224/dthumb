@@ -1137,11 +1137,24 @@ static void Disassemble_arm(u32 code, u8 str[STRING_LENGTH], ARMARCH av) {
         u8 reglist[STRING_LENGTH] = { 0 };
         FormatStringRegisterList_arm(reglist, BITS(c, 0, 16));
         u8 rn = BITS(c, 16, 4);
-        u8* w = BITS(c, 21, 1) ? "!" : ""; //W bit
+        u8 w_bit = BITS(c, 21, 1);
+        u8* w = w_bit ? "!" : ""; //W bit
         u8* s = BITS(c, 22, 1) ? "^" : ""; //S bit
         u8 am = BITS(c, 23, 2); //PU bits
-        u8* op = (BITS(c, 20, 1)) ? "ldm" : "stm"; //LDM or STM
-        size = sprintf(str, "%s%s%s r%u%s, {%s}%s", op, AddressingModes[am], Conditions[cond], rn, w, reglist, s);
+        u8 l_bit = BITS(c, 20, 1); //L bit
+        if (l_bit == 0 && am == 2 && rn == 13 && w_bit == 1) //PUSH
+        {
+            size = sprintf((char*)str, "push%s {%s}%s", Conditions[cond], reglist, s);
+        }
+        else if (l_bit == 1 && am == 1 && rn == 13 && w_bit == 1) //POP
+        {
+            size = sprintf((char*)str, "pop%s {%s}%s", Conditions[cond], reglist, s);
+        }
+        else
+        {
+            u8* op = (l_bit) ? "ldm" : "stm"; //LDM or STM
+            size = sprintf(str, "%s%s%s r%u%s, {%s}%s", op, AddressingModes[am], Conditions[cond], rn, w, reglist, s);
+        }
         break;
     }
     case 5: //Branch instructions
